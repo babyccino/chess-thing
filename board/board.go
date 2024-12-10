@@ -51,24 +51,24 @@ func (piece *Piece) IsStraightLongAttacker() bool {
 	return false
 }
 
-var pieceToStrArr = [...]string{
-	" ",
-	"♔",
-	"♕",
-	"♗",
-	"♘",
-	"♙",
-	"♖",
-	"♚",
-	"♛",
-	"♝",
-	"♞",
-	"♟",
-	"♜",
+var pieceToStrArr = [...]rune{
+	' ',
+	'♔',
+	'♕',
+	'♗',
+	'♘',
+	'♙',
+	'♖',
+	'♚',
+	'♛',
+	'♝',
+	'♞',
+	'♟',
+	'♜',
 }
 
 func (piece *Piece) ToString() string {
-	return pieceToStrArr[*piece]
+	return string(pieceToStrArr[*piece])
 }
 
 // func isDiagonalAttacking(piece Piece) bool {
@@ -363,6 +363,7 @@ func StringToPosition(str string) (Position, error) {
 }
 
 var pieceToFenArr = [...]byte{
+	'/',
 	'k',
 	'q',
 	'b',
@@ -413,8 +414,6 @@ func (board *BoardState) Fen() string {
 
 	return ret
 }
-
-const fen string = "KRBPP3/RQKP4/KBP5/PP5p/6pp/P4pbk/4pkqr/3ppbrk w 1"
 
 func getPiece(char rune) Piece {
 	switch char {
