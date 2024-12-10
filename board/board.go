@@ -6,46 +6,6 @@ import (
 	"strconv"
 )
 
-type Position struct {
-	X int8
-	Y int8
-}
-type Vector = Position
-
-func (pos *Position) Print() {
-	fmt.Printf("Position{x: %d, y: %d}\n", pos.X, pos.Y)
-}
-func (pos *Position) Add(other Position) Position {
-	return Position{pos.X + other.X, pos.Y + other.Y}
-}
-func (pos *Position) AddMult(other Position, mult int8) Position {
-	return Position{pos.X + mult*other.X, pos.Y + mult*other.Y}
-}
-func (pos *Position) Diff(other Position) Position {
-	return pos.AddMult(other, -1)
-}
-
-func positionToIndex(pos Position) int8 {
-	return pos.X + 8*pos.Y
-}
-
-func indexToPosition(index int8) Position {
-	y := index / 8
-	x := index % 8
-	return Position{x, y}
-}
-
-func (pos *Position) AddInBounds(other Position) (Position, bool) {
-	newX := pos.X + other.X
-	newY := pos.Y + other.Y
-
-	if newX < 0 || newX >= 8 || newY < 0 || newY >= 8 {
-		return Position{}, false
-	}
-
-	return Position{newX, newY}, true
-}
-
 type Piece int8
 
 const (
@@ -62,6 +22,8 @@ const (
 	BKnight
 	BPawn
 	BRook
+
+	ErrorPiece Piece = -1
 )
 
 func (piece *Piece) IsWhite() bool {
@@ -119,53 +81,6 @@ func (piece *Piece) ToString() string {
 // 	return direction >= Knight1
 // }
 
-type Direction uint8
-
-const (
-	DownRight Direction = iota
-	DownLeft
-	UpLeft
-	UpRight
-	Up
-	Down
-	Left
-	Right
-	Knight1
-	Knight2
-	Knight3
-	Knight4
-	Knight5
-	Knight6
-	Knight7
-	Knight8
-)
-
-func isDiagonal(direction Direction) bool {
-	return direction <= UpRight
-}
-func isStraight(direction Direction) bool {
-	return direction >= Up && direction <= Right
-}
-func isKnight(direction Direction) bool {
-	return direction >= Knight1
-}
-
-var directionArray = [...]Vector{
-	{1, 1}, {1, -1},
-	{-1, -1}, {-1, 1},
-	{-1, 0}, {1, 0},
-	{0, -1}, {0, 1},
-
-	{1, 2}, {2, 1}, // Knight up-right and right-up
-	{2, -1}, {1, -2}, // Knight right-down and down-right
-	{-1, -2}, {-2, -1}, // Knight down-left and left-down
-	{-2, 1}, {-1, 2}, // Knight left-up and up-left
-}
-
-func directionToVec(dir Direction) Vector {
-	return directionArray[dir]
-}
-
 type Check = int8
 
 const (
@@ -181,6 +96,10 @@ const (
 type CheckState struct {
 	check Check
 	from  Position
+}
+
+func defaultCheckState() CheckState {
+	return CheckState{check: NoCheck, from: Position{}}
 }
 
 func (state *CheckState) thingyWhite() bool {
@@ -231,7 +150,7 @@ func NewBoard() *BoardState {
 		Clear, Clear, Clear, Clear, WPawn, WKnight, WQueen, WRook,
 		Clear, Clear, Clear, WPawn, WPawn, WBishop, WRook, WKing,
 	}
-	return &BoardState{state: state, check: NoCheck, moveCounter: 0}
+	return &BoardState{state: state, check: defaultCheckState(), moveCounter: 0}
 }
 
 func (board *BoardState) ToMove() Colour {
@@ -352,7 +271,7 @@ const (
 	Black        = true
 )
 
-func amBeingAttacked(king *Position, piece Piece, white Colour, piecePosition Position, vec Vector, diagonal bool) bool {
+func amBeingAttacked(king *Position, piece Piece, white Colour, piecePosition Position, diagonal bool) bool {
 	if piece == Clear {
 		return false
 	}
@@ -364,10 +283,9 @@ func amBeingAttacked(king *Position, piece Piece, white Colour, piecePosition Po
 	}
 
 	if piece == BPawn {
-		diff := king.Diff(vec)
+		diff := king.Diff(piecePosition)
 		return diff == Position{0, -1} || diff == Position{-1, 0}
-	}
-	if diagonal {
+	} else if diagonal {
 		return piece.IsDiagonalAttacker()
 	} else {
 		return piece.IsStraightLongAttacker()
@@ -379,7 +297,7 @@ func (board *BoardState) checkOtherPieceChecks(wKing *Position, bKing *Position,
 		diagonal := i <= int(UpRight)
 		if check.thingyWhite() {
 			piece, piecePosition := board.checkInDirection(vec, wKing)
-			if amBeingAttacked(wKing, piece, White, piecePosition, vec, diagonal) {
+			if amBeingAttacked(wKing, piece, White, piecePosition, diagonal) {
 				err := check.promote(White)
 				if err != nil {
 					return nil, err
@@ -393,7 +311,7 @@ func (board *BoardState) checkOtherPieceChecks(wKing *Position, bKing *Position,
 
 		if check.thingyBlack() {
 			piece, piecePosition := board.checkInDirection(vec, bKing)
-			if amBeingAttacked(bKing, piece, Black, piecePosition, vec, diagonal) {
+			if amBeingAttacked(bKing, piece, Black, piecePosition, diagonal) {
 				err := check.promote(Black)
 				if err != nil {
 					return nil, err
@@ -498,6 +416,40 @@ func (board *BoardState) Fen() string {
 
 const fen string = "KRBPP3/RQKP4/KBP5/PP5p/6pp/P4pbk/4pkqr/3ppbrk w 1"
 
+func getPiece(char rune) Piece {
+	switch char {
+	case 'k':
+		return WKing
+	case 'q':
+		return WQueen
+	case 'b':
+		return WBishop
+	case 'n':
+		return WKnight
+	case 'p':
+		return WPawn
+	case 'r':
+		return WRook
+	case 'K':
+		return BKing
+	case 'Q':
+		return BQueen
+	case 'B':
+		return BBishop
+	case 'N':
+		return BKnight
+	case 'P':
+		return BPawn
+	case 'R':
+		return BRook
+	case '/':
+		return Clear
+	default:
+		return ErrorPiece
+	}
+
+}
+
 func ParseFen(fen string) (*BoardState, error) {
 	state := [64]Piece{}
 	stateIndex := 0
@@ -529,32 +481,9 @@ func ParseFen(fen string) (*BoardState, error) {
 			continue
 		}
 
-		switch char {
-		case 'k':
-			state[stateIndex] = WKing
-		case 'q':
-			state[stateIndex] = WQueen
-		case 'b':
-			state[stateIndex] = WBishop
-		case 'n':
-			state[stateIndex] = WKnight
-		case 'p':
-			state[stateIndex] = WPawn
-		case 'r':
-			state[stateIndex] = WRook
-		case 'K':
-			state[stateIndex] = BKing
-		case 'Q':
-			state[stateIndex] = BQueen
-		case 'B':
-			state[stateIndex] = BBishop
-		case 'N':
-			state[stateIndex] = BKnight
-		case 'P':
-			state[stateIndex] = BPawn
-		case 'R':
-			state[stateIndex] = BRook
-		case '/':
+		piece := getPiece(char)
+
+		if piece == Clear {
 			if stateIndex%8 == 7 {
 				stateIndex += 1
 				rowIndex = 0
@@ -563,9 +492,11 @@ func ParseFen(fen string) (*BoardState, error) {
 
 			errorStr := fmt.Sprintf("/ found in wrong place %d", stateIndex)
 			return nil, errors.New(errorStr)
-		default:
+		} else if piece == ErrorPiece {
 			errorStr := fmt.Sprintf("unexpected character found: %b ", char)
 			return nil, errors.New(errorStr)
+		} else {
+			state[stateIndex] = piece
 		}
 
 		stateIndex += 1
