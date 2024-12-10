@@ -3,6 +3,7 @@ package board
 import (
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 type Position struct {
@@ -22,6 +23,16 @@ func (pos *Position) AddMult(other Position, mult int8) Position {
 }
 func (pos *Position) Diff(other Position) Position {
 	return pos.AddMult(other, -1)
+}
+
+func positionToIndex(pos Position) int8 {
+	return pos.X + 8*pos.Y
+}
+
+func indexToPosition(index int8) Position {
+	y := index / 8
+	x := index % 8
+	return Position{x, y}
 }
 
 func (pos *Position) AddInBounds(other Position) (Position, bool) {
@@ -159,9 +170,11 @@ type Check = int8
 
 const (
 	NoCheck Check = iota
+
 	WhiteCheck
-	BlackCheck
 	WhiteDoubleCheck
+
+	BlackCheck
 	BlackDoubleCheck
 )
 
@@ -171,25 +184,40 @@ type CheckState struct {
 }
 
 func (state *CheckState) thingyWhite() bool {
-	return debug || check.check == NoCheck || check.check == BlackCheck
+	return debug || state.check == NoCheck || state.check == BlackCheck
 }
 func (state *CheckState) thingyBlack() bool {
-	return debug || check.check == NoCheck || check.check == WhiteCheck
+	return debug || state.check == NoCheck || state.check == WhiteCheck
+}
+func (state *CheckState) promote(colour Colour) error {
+	// TODO
+	if state.check == NoCheck {
+		if colour == White {
+			state.check = WhiteCheck
+			return nil
+		}
+		if colour == Black {
+			state.check = BlackCheck
+			return nil
+		}
+	}
+
+	if state.check == WhiteCheck || state.check == BlackCheck {
+		state.check += 1
+		return nil
+	}
+
+	if state.check == WhiteDoubleCheck || state.check > BlackDoubleCheck {
+		return errors.New("a third piece checked an already double checked king")
+	}
+
+	return nil
 }
 
 type BoardState struct {
-	state [64]Piece
-	check Check
-}
-
-func positionToIndex(pos Position) int8 {
-	return pos.X + 8*pos.Y
-}
-
-func indexToPosition(index int8) Position {
-	y := index / 8
-	x := index % 8
-	return Position{x, y}
+	state       [64]Piece
+	check       CheckState
+	moveCounter uint16
 }
 
 func NewBoard() *BoardState {
@@ -203,7 +231,14 @@ func NewBoard() *BoardState {
 		Clear, Clear, Clear, Clear, WPawn, WKnight, WQueen, WRook,
 		Clear, Clear, Clear, WPawn, WPawn, WBishop, WRook, WKing,
 	}
-	return &BoardState{state: state, check: NoCheck}
+	return &BoardState{state: state, check: NoCheck, moveCounter: 0}
+}
+
+func (board *BoardState) ToMove() Colour {
+	if board.moveCounter%2 == 0 {
+		return White
+	}
+	return Black
 }
 
 func (board *BoardState) ToString() string {
@@ -310,7 +345,14 @@ func (board *BoardState) checkInDirection(vec Vector, pos *Position) (Piece, Pos
 	}
 }
 
-func amBeingAttacked(king *Position, piece Piece, white bool, piecePosition Position, vec Vector, diagonal bool) bool {
+type Colour = bool
+
+const (
+	White Colour = false
+	Black        = true
+)
+
+func amBeingAttacked(king *Position, piece Piece, white Colour, piecePosition Position, vec Vector, diagonal bool) bool {
 	if piece == Clear {
 		return false
 	}
@@ -332,30 +374,39 @@ func amBeingAttacked(king *Position, piece Piece, white bool, piecePosition Posi
 	}
 }
 
-func (board *BoardState) checkOtherPieceChecksImpl(wKing *Position, bKing *Position, check *CheckState) (*CheckState, error) {
+func (board *BoardState) checkOtherPieceChecks(wKing *Position, bKing *Position, check *CheckState) (*CheckState, error) {
 	for i, vec := range directionArray[:Knight1] {
 		diagonal := i <= int(UpRight)
 		if check.thingyWhite() {
 			piece, piecePosition := board.checkInDirection(vec, wKing)
-			if amBeingAttacked(wKing, piece, true, piecePosition, vec, diagonal) {
-				// TODO
-				// no check => check etc.
-				// check => doubleCheck etc.
-				// if you get to doublecheck return
-				// if debug just keep going ay
+			if amBeingAttacked(wKing, piece, White, piecePosition, vec, diagonal) {
+				err := check.promote(White)
+				if err != nil {
+					return nil, err
+				}
+
+				if check.check == WhiteDoubleCheck {
+					return check, nil
+				}
 			}
 		}
 
 		if check.thingyBlack() {
-			// TODO
+			piece, piecePosition := board.checkInDirection(vec, bKing)
+			if amBeingAttacked(bKing, piece, Black, piecePosition, vec, diagonal) {
+				err := check.promote(Black)
+				if err != nil {
+					return nil, err
+				}
+
+				if check.check == BlackDoubleCheck {
+					return check, nil
+				}
+			}
 		}
 	}
 
-	return &CheckState{}, nil
-}
-
-func (board *BoardState) checkOtherPieceChecks(wKing *Position, bKing *Position, check *CheckState) (*CheckState, error) {
-	return board.checkOtherPieceChecksImpl(wKing, bKing, check)
+	return check, nil
 }
 
 func (board *BoardState) UpdateCheckState() error {
@@ -365,6 +416,7 @@ func (board *BoardState) UpdateCheckState() error {
 	if err != nil {
 		return err
 	}
+
 	check, err = board.checkOtherPieceChecks(wKing, bKing, check)
 	if err != nil {
 		return err
@@ -390,4 +442,194 @@ func StringToPosition(str string) (Position, error) {
 	parsedFile := int8(file - 'A')
 	parsedRank := int8(rank - '1')
 	return Position{X: parsedFile, Y: parsedRank}, nil
+}
+
+func (board *BoardState) Fen() string {
+	counter := 0
+	ret := ""
+	for index, piece := range board.state {
+		if piece == Clear {
+			counter += 1
+		} else if counter != 0 {
+			ret += string('0' + counter)
+			counter = 0
+		}
+
+		switch piece {
+		case WKing:
+			ret += "k"
+		case WQueen:
+			ret += "q"
+		case WBishop:
+			ret += "b"
+		case WKnight:
+			ret += "n"
+		case WPawn:
+			ret += "p"
+		case WRook:
+			ret += "r"
+		case BKing:
+			ret += "K"
+		case BQueen:
+			ret += "Q"
+		case BBishop:
+			ret += "B"
+		case BKnight:
+			ret += "N"
+		case BPawn:
+			ret += "P"
+		case BRook:
+			ret += "R"
+		}
+
+		if index%8 == 7 {
+			if counter != 0 {
+				ret += string('0' + counter)
+			}
+			if index != len(board.state)-1 {
+				ret += "/"
+			}
+			counter = 0
+		}
+	}
+
+	if board.ToMove() == White {
+		ret += " w"
+	} else {
+		ret += " b"
+	}
+
+	ret += fmt.Sprintf(" %d", board.moveCounter)
+
+	return ret
+}
+
+const fen string = "KRBPP3/RQKP4/KBP5/PP5p/6pp/P4pbk/4pkqr/3ppbrk w 1"
+
+func ParseFen(fen string) (*BoardState, error) {
+	state := [64]Piece{}
+	stateIndex := 0
+	rowIndex := 0
+
+	var strIndex int
+	for strIndex = range fen {
+		char := fen[strIndex]
+
+		if stateIndex == 64 {
+			if char != ' ' {
+				errorStr := fmt.Sprintf("space not found at end of pieces")
+				return nil, errors.New(errorStr)
+			}
+			strIndex += 1
+			break
+		}
+
+		foundCorrectChar := false
+
+		if char >= '1' && char <= '8' {
+			foundCorrectChar = true
+			delta := int(char - '0')
+			stateIndex += delta
+			rowIndex += delta
+			if rowIndex > 8 {
+				errorStr := fmt.Sprintf("unexpected character found: %b, row index %d: ", char, rowIndex)
+				return nil, errors.New(errorStr)
+			}
+		}
+
+		switch char {
+		case 'k':
+			foundCorrectChar = true
+			state[stateIndex] = WKing
+		case 'q':
+			foundCorrectChar = true
+			state[stateIndex] = WQueen
+		case 'b':
+			foundCorrectChar = true
+			state[stateIndex] = WBishop
+		case 'n':
+			foundCorrectChar = true
+			state[stateIndex] = WKnight
+		case 'p':
+			foundCorrectChar = true
+			state[stateIndex] = WPawn
+		case 'r':
+			foundCorrectChar = true
+			state[stateIndex] = WRook
+		case 'K':
+			foundCorrectChar = true
+			state[stateIndex] = BKing
+		case 'Q':
+			foundCorrectChar = true
+			state[stateIndex] = BQueen
+		case 'B':
+			foundCorrectChar = true
+			state[stateIndex] = BBishop
+		case 'N':
+			foundCorrectChar = true
+			state[stateIndex] = BKnight
+		case 'P':
+			foundCorrectChar = true
+			state[stateIndex] = BPawn
+		case 'R':
+			foundCorrectChar = true
+			state[stateIndex] = BRook
+		case '/':
+			if stateIndex%8 == 7 {
+				stateIndex += 1
+				rowIndex = 0
+				continue
+			}
+			foundCorrectChar = true
+
+			errorStr := fmt.Sprintf("/ found in wrong place %d", stateIndex)
+			return nil, errors.New(errorStr)
+		default:
+			errorStr := fmt.Sprintf("unexpected character found: %b ", char)
+			return nil, errors.New(errorStr)
+		}
+
+		if !foundCorrectChar {
+			errorStr := fmt.Sprintf("unexpected character found: %b ", char)
+			return nil, errors.New(errorStr)
+		}
+
+		stateIndex += 1
+		rowIndex += 1
+
+		if rowIndex > 7 {
+			errorStr := fmt.Sprintf("row index too large: %d", rowIndex)
+			return nil, errors.New(errorStr)
+		}
+	}
+
+	color := White
+	if fen[strIndex] == 'w' {
+		color = White
+	} else if fen[strIndex] == 'b' {
+		color = Black
+	} else {
+		errorStr := fmt.Sprintf("unexpected character, should be w or b: %b", fen[strIndex])
+		return nil, errors.New(errorStr)
+	}
+
+	strIndex += 1
+	if fen[strIndex] != ' ' {
+		errorStr := fmt.Sprintf("unexpected character, should be space: %b", fen[strIndex])
+		return nil, errors.New(errorStr)
+	}
+
+	strIndex += 1
+	moveCounter, err := strconv.ParseUint(fen[strIndex:], 10, 0)
+
+	if err != nil {
+		return nil, err
+	}
+
+	moveCounter = moveCounter * 2
+	if !color {
+		moveCounter += 1
+	}
+
+	return &BoardState{state: state, check: CheckState{}, moveCounter: uint16(moveCounter)}, nil
 }
