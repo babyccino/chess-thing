@@ -444,6 +444,21 @@ func StringToPosition(str string) (Position, error) {
 	return Position{X: parsedFile, Y: parsedRank}, nil
 }
 
+var pieceToFenArr = [...]byte{
+	'k',
+	'q',
+	'b',
+	'n',
+	'p',
+	'r',
+	'K',
+	'Q',
+	'B',
+	'N',
+	'P',
+	'R',
+}
+
 func (board *BoardState) Fen() string {
 	counter := 0
 	ret := ""
@@ -455,31 +470,8 @@ func (board *BoardState) Fen() string {
 			counter = 0
 		}
 
-		switch piece {
-		case WKing:
-			ret += "k"
-		case WQueen:
-			ret += "q"
-		case WBishop:
-			ret += "b"
-		case WKnight:
-			ret += "n"
-		case WPawn:
-			ret += "p"
-		case WRook:
-			ret += "r"
-		case BKing:
-			ret += "K"
-		case BQueen:
-			ret += "Q"
-		case BBishop:
-			ret += "B"
-		case BKnight:
-			ret += "N"
-		case BPawn:
-			ret += "P"
-		case BRook:
-			ret += "R"
+		if piece > Clear {
+			ret += string(pieceToFenArr[piece])
 		}
 
 		if index%8 == 7 {
@@ -511,68 +503,56 @@ func ParseFen(fen string) (*BoardState, error) {
 	stateIndex := 0
 	rowIndex := 0
 
-	var strIndex int
-	for strIndex = range fen {
-		char := fen[strIndex]
+	boardStrLen := 0
+	for strIndex, char := range fen {
 
 		if stateIndex == 64 {
 			if char != ' ' {
 				errorStr := fmt.Sprintf("space not found at end of pieces")
 				return nil, errors.New(errorStr)
 			}
-			strIndex += 1
+
+			boardStrLen = strIndex + 1
 			break
 		}
 
-		foundCorrectChar := false
-
 		if char >= '1' && char <= '8' {
-			foundCorrectChar = true
 			delta := int(char - '0')
 			stateIndex += delta
 			rowIndex += delta
-			if rowIndex > 8 {
+
+			if rowIndex > 7 {
 				errorStr := fmt.Sprintf("unexpected character found: %b, row index %d: ", char, rowIndex)
 				return nil, errors.New(errorStr)
 			}
+
+			continue
 		}
 
 		switch char {
 		case 'k':
-			foundCorrectChar = true
 			state[stateIndex] = WKing
 		case 'q':
-			foundCorrectChar = true
 			state[stateIndex] = WQueen
 		case 'b':
-			foundCorrectChar = true
 			state[stateIndex] = WBishop
 		case 'n':
-			foundCorrectChar = true
 			state[stateIndex] = WKnight
 		case 'p':
-			foundCorrectChar = true
 			state[stateIndex] = WPawn
 		case 'r':
-			foundCorrectChar = true
 			state[stateIndex] = WRook
 		case 'K':
-			foundCorrectChar = true
 			state[stateIndex] = BKing
 		case 'Q':
-			foundCorrectChar = true
 			state[stateIndex] = BQueen
 		case 'B':
-			foundCorrectChar = true
 			state[stateIndex] = BBishop
 		case 'N':
-			foundCorrectChar = true
 			state[stateIndex] = BKnight
 		case 'P':
-			foundCorrectChar = true
 			state[stateIndex] = BPawn
 		case 'R':
-			foundCorrectChar = true
 			state[stateIndex] = BRook
 		case '/':
 			if stateIndex%8 == 7 {
@@ -580,16 +560,10 @@ func ParseFen(fen string) (*BoardState, error) {
 				rowIndex = 0
 				continue
 			}
-			foundCorrectChar = true
 
 			errorStr := fmt.Sprintf("/ found in wrong place %d", stateIndex)
 			return nil, errors.New(errorStr)
 		default:
-			errorStr := fmt.Sprintf("unexpected character found: %b ", char)
-			return nil, errors.New(errorStr)
-		}
-
-		if !foundCorrectChar {
 			errorStr := fmt.Sprintf("unexpected character found: %b ", char)
 			return nil, errors.New(errorStr)
 		}
@@ -604,23 +578,23 @@ func ParseFen(fen string) (*BoardState, error) {
 	}
 
 	color := White
-	if fen[strIndex] == 'w' {
+	if fen[boardStrLen] == 'w' {
 		color = White
-	} else if fen[strIndex] == 'b' {
+	} else if fen[boardStrLen] == 'b' {
 		color = Black
 	} else {
-		errorStr := fmt.Sprintf("unexpected character, should be w or b: %b", fen[strIndex])
+		errorStr := fmt.Sprintf("unexpected character, should be w or b: %b", fen[boardStrLen])
 		return nil, errors.New(errorStr)
 	}
 
-	strIndex += 1
-	if fen[strIndex] != ' ' {
-		errorStr := fmt.Sprintf("unexpected character, should be space: %b", fen[strIndex])
+	boardStrLen += 1
+	if fen[boardStrLen] != ' ' {
+		errorStr := fmt.Sprintf("unexpected character, should be space: %b", fen[boardStrLen])
 		return nil, errors.New(errorStr)
 	}
 
-	strIndex += 1
-	moveCounter, err := strconv.ParseUint(fen[strIndex:], 10, 0)
+	boardStrLen += 1
+	moveCounter, err := strconv.ParseUint(fen[boardStrLen:], 10, 0)
 
 	if err != nil {
 		return nil, err
