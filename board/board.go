@@ -289,7 +289,7 @@ func (board *BoardState) CheckKnightChecks(wKing *Position, bKing *Position, fin
 	return &CheckState{check, from}, nil
 }
 
-func (board *BoardState) checkInDirection(vec Vector, pos *Position) (Piece, Position) {
+func (board *BoardState) CheckInDirection(vec Vector, pos *Position) (Piece, Position) {
 	posCopy := *pos
 	for {
 		var inBounds bool
@@ -333,11 +333,11 @@ func amBeingAttacked(king *Position, piece Piece, white Colour, piecePosition Po
 	}
 }
 
-func (board *BoardState) checkOtherPieceChecks(wKing *Position, bKing *Position, check *CheckState) (*CheckState, error) {
+func (board *BoardState) CheckOtherPieceChecks(wKing *Position, bKing *Position, check *CheckState) (*CheckState, error) {
 	for i, vec := range directionArray[:Knight1] {
 		diagonal := i <= int(UpRight)
 		if check.thingyWhite() {
-			piece, piecePosition := board.checkInDirection(vec, wKing)
+			piece, piecePosition := board.CheckInDirection(vec, wKing)
 			if amBeingAttacked(wKing, piece, White, piecePosition, diagonal) {
 				err := check.promote(White)
 				if err != nil {
@@ -351,7 +351,7 @@ func (board *BoardState) checkOtherPieceChecks(wKing *Position, bKing *Position,
 		}
 
 		if check.thingyBlack() {
-			piece, piecePosition := board.checkInDirection(vec, bKing)
+			piece, piecePosition := board.CheckInDirection(vec, bKing)
 			if amBeingAttacked(bKing, piece, Black, piecePosition, diagonal) {
 				err := check.promote(Black)
 				if err != nil {
@@ -376,7 +376,7 @@ func (board *BoardState) UpdateCheckState(findErr bool) error {
 		return err
 	}
 
-	check, err = board.checkOtherPieceChecks(wKing, bKing, check)
+	check, err = board.CheckOtherPieceChecks(wKing, bKing, check)
 	if err != nil {
 		return err
 	}
