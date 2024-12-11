@@ -11,11 +11,11 @@ type Position struct {
 }
 type Vector = Position
 
-func (pos *Position) ToString() string {
+func (pos *Position) String() string {
 	return fmt.Sprintf("Position{x: %d, y: %d}", pos.X, pos.Y)
 }
 func (pos *Position) Print() {
-	fmt.Print(pos.ToString() + "\n")
+	fmt.Print(pos.String() + "\n")
 }
 func (pos *Position) Add(other Position) Position {
 	return Position{pos.X + other.X, pos.Y + other.Y}
@@ -80,14 +80,14 @@ func isKnight(direction Direction) bool {
 }
 
 var (
-	DownRightVec = Vector{ 1,1}
-	DownLeftVec  = Vector{ -1,1}
-	UpLeftVec    = Vector{ -1,-1}
-	UpRightVec   = Vector{ 1,-1}
-	UpVec        = Vector{ 0,-1}
-	DownVec      = Vector{ 0,1}
-	LeftVec      = Vector{ -1,0}
-	RightVec     = Vector{ 1,0}
+	DownRightVec = Vector{1, 1}
+	DownLeftVec  = Vector{-1, 1}
+	UpLeftVec    = Vector{-1, -1}
+	UpRightVec   = Vector{1, -1}
+	UpVec        = Vector{0, -1}
+	DownVec      = Vector{0, 1}
+	LeftVec      = Vector{-1, 0}
+	RightVec     = Vector{1, 0}
 	Knight1Vec   = Vector{1, 2}
 	Knight2Vec   = Vector{2, 1}
 	Knight3Vec   = Vector{2, -1}

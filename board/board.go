@@ -67,7 +67,7 @@ var pieceToStrArr = [...]rune{
 	'♜',
 }
 
-func (piece Piece) ToString() string {
+func (piece Piece) String() string {
 	return string(pieceToStrArr[piece])
 }
 
@@ -118,9 +118,9 @@ func defaultCheckState() CheckState {
 	return CheckState{Check: NoCheck, From: Position{}}
 }
 
-func (state *CheckState) ToString() string {
+func (state *CheckState) String() string {
 	return fmt.Sprintf("check: %s, position %s",
-		CheckToString(state.Check), state.From.ToString())
+		CheckToString(state.Check), state.From.String())
 }
 func (state *CheckState) thingyWhite() bool {
 	return debug || state.Check == NoCheck || state.Check == BlackCheck
@@ -186,10 +186,10 @@ func (board *BoardState) ToMove() Colour {
 	return Black
 }
 
-func (board *BoardState) ToString() string {
+func (board *BoardState) String() string {
 	str := " A B C D E F G H  \n\n "
 	for i, piece := range board.State {
-		str += piece.ToString() + " "
+		str += piece.String() + " "
 		if i%8 == 7 {
 			str += fmt.Sprintf(" %d\n ", i/8+1)
 		}
@@ -199,7 +199,7 @@ func (board *BoardState) ToString() string {
 }
 
 func (board *BoardState) Print() {
-	println(board.ToString())
+	println(board.String())
 }
 
 func (board *BoardState) GetSquare(pos Position) Piece {
@@ -244,7 +244,9 @@ func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position) {
 
 const debug = true
 
-func (board *BoardState) CheckKnightChecks(wKing *Position, bKing *Position, findDouble bool) (*CheckState, error) {
+func (board *BoardState) CheckKnightChecks(wKing *Position,
+	bKing *Position,
+	findDouble bool) (*CheckState, error) {
 	// check the knight checks first because a double knight check is not possible
 	check := NoCheck
 	from := Position{}
@@ -257,7 +259,7 @@ func (board *BoardState) CheckKnightChecks(wKing *Position, bKing *Position, fin
 
 			if check != NoCheck {
 				err := fmt.Errorf("weird board state reached, check: %s\n\n%s",
-					CheckToString(check), board.ToString())
+					CheckToString(check), board.String())
 				return nil, err
 			}
 
@@ -268,7 +270,7 @@ func (board *BoardState) CheckKnightChecks(wKing *Position, bKing *Position, fin
 		pos, inBounds = bKing.AddInBounds(vec)
 		if inBounds {
 			fmt.Printf("checking for black %s, piece%s\n",
-				pos.ToString(), board.GetSquare(pos).ToString())
+				pos.String(), board.GetSquare(pos).String())
 		}
 		if inBounds && board.GetSquare(pos) == WKnight {
 			if !findDouble {
@@ -277,7 +279,7 @@ func (board *BoardState) CheckKnightChecks(wKing *Position, bKing *Position, fin
 
 			if check != NoCheck {
 				err := fmt.Errorf("weird board state reached, check: %s\n\n%s",
-					CheckToString(check), board.ToString())
+					CheckToString(check), board.String())
 				return nil, err
 			}
 
