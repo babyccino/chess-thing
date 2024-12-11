@@ -1,6 +1,9 @@
 package board
 
-import "fmt"
+import (
+	"fmt"
+	"testing"
+)
 
 type Position struct {
 	X int8
@@ -8,8 +11,11 @@ type Position struct {
 }
 type Vector = Position
 
+func (pos *Position) ToString() string {
+	return fmt.Sprintf("Position{x: %d, y: %d}", pos.X, pos.Y)
+}
 func (pos *Position) Print() {
-	fmt.Printf("Position{x: %d, y: %d}\n", pos.X, pos.Y)
+	fmt.Print(pos.ToString() + "\n")
 }
 func (pos *Position) Add(other Position) Position {
 	return Position{pos.X + other.X, pos.Y + other.Y}
@@ -106,4 +112,12 @@ var directionArray = [...]Vector{
 
 func directionToVec(dir Direction) Vector {
 	return directionArray[dir]
+}
+
+func AssertPositionsEqual(test *testing.T, pos1 Position, pos2 Position) {
+	test.Helper()
+	if pos1 != pos2 {
+		test.Fatalf("expected %s, received %s",
+			pos1.ToString(), pos2.ToString())
+	}
 }
