@@ -104,6 +104,71 @@ func Test_check(test *testing.T) {
 		_, err = boardState.CheckKnightChecks(wKing, bKing, true)
 		assertFailure(test, err)
 	})
+
+	test.Run("test find piece in direction", func(test *testing.T) {
+		test.Parallel()
+		boardState, err := board.ParseFen(
+			"K6P/pppppppp/8/8/8/8/8/7k w 0")
+		assertSuccess(test, err)
+
+		piece, pos := boardState.CheckInDirection(
+			board.RightVec,
+			&board.Position{0, 0},
+		)
+		assertSuccess(test, err)
+		assertPieceInDirectionEquality(test,
+			board.BPawn,
+			piece,
+			board.Position{7, 0},
+			pos)
+
+		boardState, err = board.ParseFen(
+			"K7/pppppppp/8/8/8/8/8/7k w 0")
+		assertSuccess(test, err)
+
+		piece, pos = boardState.CheckInDirection(
+			board.RightVec,
+			&board.Position{0, 0},
+		)
+		assertSuccess(test, err)
+		assertPieceInDirectionEquality(test,
+			board.Clear,
+			piece,
+			board.Position{},
+			pos)
+
+		boardState, err = board.ParseFen(
+			"K7/P7/8/8/8/5q2/7p/6pk w 0")
+		assertSuccess(test, err)
+
+		piece, pos = boardState.CheckInDirection(
+			board.UpLeftVec,
+			&board.Position{7, 7},
+		)
+		assertSuccess(test, err)
+		assertPieceInDirectionEquality(test,
+			board.WQueen,
+			piece,
+			board.Position{5, 5},
+			pos)
+	})
+}
+
+func assertPieceInDirectionEquality(
+	test *testing.T,
+	expectedPiece,
+	recievedPiece board.Piece,
+	expectedPosition,
+	recievedPosition board.Position,
+) {
+	test.Helper()
+	if expectedPiece != recievedPiece || expectedPosition != recievedPosition {
+		test.Fatalf("expected piece %s at pos: %s, got %s at %s",
+			expectedPiece.ToString(),
+			expectedPosition.ToString(),
+			recievedPiece.ToString(),
+			recievedPosition.ToString())
+	}
 }
 
 func assertSuccess(test *testing.T, err error) {
