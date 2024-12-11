@@ -2,6 +2,7 @@ package board_test
 
 import (
 	"chess/board"
+	"fmt"
 	"testing"
 )
 
@@ -14,8 +15,14 @@ func Test_fen(test *testing.T) {
 		boardState := board.NewBoard()
 		assertStrEquality(test, "KRBPP3/RQNP4/NBP5/PP5p/P5pp/5pbn/4pnqr/3ppbrk w 0", boardState.Fen())
 
-		move1, _ := board.StringToPosition("A5")
-		move2, _ := board.StringToPosition("A6")
+		move1, err := board.StringToPosition("A5")
+		if err != nil {
+			test.Fatal(err)
+		}
+		move2, err := board.StringToPosition("A6")
+		if err != nil {
+			test.Fatal(err)
+		}
 		boardState.Move(move1, move2)
 		assertStrEquality(test, "KRBPP3/RQNP4/NBP5/PP5p/6pp/P4pbn/4pnqr/3ppbrk w 0", boardState.Fen())
 	})
@@ -67,9 +74,9 @@ func Test_check(test *testing.T) {
 		wKing, bKing := boardState.GetKingPositions()
 		check, err := boardState.CheckKnightChecks(wKing, bKing, true)
 		assertSuccess(test, err)
-		assertCheckEquality(test,
-			board.CheckState{board.BlackCheck, board.Position{2, 1}},
-			*check,
+		assertEq(test,
+			&board.CheckState{board.BlackCheck, board.Position{2, 1}},
+			check,
 		)
 
 		boardState, err = board.ParseFen(
@@ -77,9 +84,9 @@ func Test_check(test *testing.T) {
 		wKing, bKing = boardState.GetKingPositions()
 		check, err = boardState.CheckKnightChecks(wKing, bKing, true)
 		assertSuccess(test, err)
-		assertCheckEquality(test,
-			board.CheckState{board.NoCheck, board.Position{}},
-			*check,
+		assertEq(test,
+			&board.CheckState{board.NoCheck, board.Position{}},
+			check,
 		)
 
 		boardState, err = board.ParseFen(
@@ -87,9 +94,9 @@ func Test_check(test *testing.T) {
 		wKing, bKing = boardState.GetKingPositions()
 		check, err = boardState.CheckKnightChecks(wKing, bKing, true)
 		assertSuccess(test, err)
-		assertCheckEquality(test,
-			board.CheckState{board.BlackCheck, board.Position{2, 1}},
-			*check,
+		assertEq(test,
+			&board.CheckState{board.BlackCheck, board.Position{2, 1}},
+			check,
 		)
 
 		boardState, err = board.ParseFen(
@@ -154,6 +161,14 @@ func Test_check(test *testing.T) {
 	})
 }
 
+func assertEq(test *testing.T, expected, received fmt.Stringer) {
+	test.Helper()
+	if expected != received {
+		test.Fatalf("expected: %s\nreceived: %s",
+			expected.String(), received.String())
+	}
+}
+
 func assertPieceInDirectionEquality(
 	test *testing.T,
 	expectedPiece,
@@ -164,10 +179,10 @@ func assertPieceInDirectionEquality(
 	test.Helper()
 	if expectedPiece != recievedPiece || expectedPosition != recievedPosition {
 		test.Fatalf("expected piece %s at pos: %s, got %s at %s",
-			expectedPiece.ToString(),
-			expectedPosition.ToString(),
-			recievedPiece.ToString(),
-			recievedPosition.ToString())
+			expectedPiece.String(),
+			expectedPosition.String(),
+			recievedPiece.String(),
+			recievedPosition.String())
 	}
 }
 
@@ -207,7 +222,7 @@ func assertBoardEquality(test *testing.T, expected, received *board.BoardState) 
 	if expected.Check != expected.Check {
 		equal = false
 		test.Errorf("expected Check: %s, received: %v",
-			expected.Check.ToString(), received.Check.ToString())
+			expected.Check, received.Check)
 	}
 
 	if equal {
@@ -215,10 +230,10 @@ func assertBoardEquality(test *testing.T, expected, received *board.BoardState) 
 	}
 
 	test.Errorf("expected:\n%sreceived:\n%s",
-		expected.ToString(), received.ToString())
+		expected.String(), received.String())
 
 	test.Errorf("expected:\n%sreceived:\n%s",
-		expected.ToString(), received.ToString())
+		expected.String(), received.String())
 
 	test.FailNow()
 }
@@ -228,13 +243,5 @@ func assertStrEquality(test *testing.T, expected, received string) {
 	if expected != received {
 		test.Fatalf("expected:\n%s\nreceived:\n%s",
 			expected, received)
-	}
-}
-
-func assertCheckEquality(test *testing.T, expected, received board.CheckState) {
-	test.Helper()
-	if expected != received {
-		test.Fatalf("expected: %s\nreceived: %s",
-			expected.ToString(), received.ToString())
 	}
 }
