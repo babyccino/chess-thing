@@ -65,124 +65,141 @@ func Test_fen(test *testing.T) {
 func Test_check(test *testing.T) {
 	test.Parallel()
 
-	test.Run("test knight checks", func(test *testing.T) {
-		test.Parallel()
-		boardState, err := board.ParseFen(
-			"K7/2n5/8/8/8/8/8/7k w 0")
-		assertSuccess(test, err)
-
-		wKing, bKing := boardState.GetKingPositions()
-		check, err := boardState.CheckKnightChecks(wKing, bKing, true)
-		assertSuccess(test, err)
-		assertEq(test,
-			&board.CheckState{board.BlackCheck, board.Position{2, 1}},
-			check,
-		)
-
-		boardState, err = board.ParseFen(
-			"K7/2N5/8/8/8/8/6n1/7k w 0")
-		wKing, bKing = boardState.GetKingPositions()
-		check, err = boardState.CheckKnightChecks(wKing, bKing, true)
-		assertSuccess(test, err)
-		assertEq(test,
-			&board.CheckState{board.NoCheck, board.Position{}},
-			check,
-		)
-
-		boardState, err = board.ParseFen(
-			"K7/2n5/8/8/8/8/6n1/7k w 0")
-		wKing, bKing = boardState.GetKingPositions()
-		check, err = boardState.CheckKnightChecks(wKing, bKing, true)
-		assertSuccess(test, err)
-		assertEq(test,
-			&board.CheckState{board.BlackCheck, board.Position{2, 1}},
-			check,
-		)
-
-		boardState, err = board.ParseFen(
-			"K7/2n5/8/8/8/8/5N2/7k w 0")
-		wKing, bKing = boardState.GetKingPositions()
-		_, err = boardState.CheckKnightChecks(wKing, bKing, true)
-		assertFailure(test, err)
-
-		boardState, err = board.ParseFen(
-			"K7/2n5/1n6/8/8/8/5N2/7k w 0")
-		wKing, bKing = boardState.GetKingPositions()
-		_, err = boardState.CheckKnightChecks(wKing, bKing, true)
-		assertFailure(test, err)
-	})
-
 	test.Run("test find piece in direction", func(test *testing.T) {
 		test.Parallel()
-		boardState, err := board.ParseFen(
-			"K6P/pppppppp/8/8/8/8/8/7k w 0")
-		assertSuccess(test, err)
+		helper := func(
+			fen string,
+			vec board.Vector,
+			pos board.Position,
+			expectedPiece board.Piece,
+			expectedPosition board.Position,
+		) {
+			boardState, err := board.ParseFen(
+				fen)
+			assertSuccess(test, err)
 
-		piece, pos := boardState.CheckInDirection(
+			piece, pos := boardState.CheckInDirection(
+				vec,
+				&pos,
+			)
+
+			assertSuccess(test, err)
+
+			if expectedPiece != piece || expectedPosition != pos {
+				test.Fatalf("expected piece %s at pos: %s, got %s at %s",
+					expectedPiece.String(),
+					expectedPosition.String(),
+					piece.String(),
+					pos.String())
+			}
+		}
+
+		helper(
+			"K6P/pppppppp/8/8/8/8/8/7k w 0",
 			board.RightVec,
-			&board.Position{0, 0},
-		)
-		assertSuccess(test, err)
-		assertPieceInDirectionEquality(test,
+			board.Position{0, 0},
 			board.BPawn,
-			piece,
 			board.Position{7, 0},
-			pos)
-
-		boardState, err = board.ParseFen(
-			"K7/pppppppp/8/8/8/8/8/7k w 0")
-		assertSuccess(test, err)
-
-		piece, pos = boardState.CheckInDirection(
+		)
+		helper(
+			"K7/pppppppp/8/8/8/8/8/7k w 0",
 			board.RightVec,
-			&board.Position{0, 0},
-		)
-		assertSuccess(test, err)
-		assertPieceInDirectionEquality(test,
+			board.Position{0, 0},
 			board.Clear,
-			piece,
 			board.Position{},
-			pos)
-
-		boardState, err = board.ParseFen(
-			"K7/P7/8/8/8/5q2/7p/6pk w 0")
-		assertSuccess(test, err)
-
-		piece, pos = boardState.CheckInDirection(
-			board.UpLeftVec,
-			&board.Position{7, 7},
 		)
-		assertSuccess(test, err)
-		assertPieceInDirectionEquality(test,
+		helper(
+			"K7/P7/8/8/8/5q2/7p/6pk w 0",
+			board.UpLeftVec,
+			board.Position{7, 7},
 			board.WQueen,
-			piece,
 			board.Position{5, 5},
-			pos)
+		)
+	})
+
+	test.Run("test other piece checks", func(test *testing.T) {
+		test.Parallel()
+		helper := func(fen string, startingCheck, endingCheck board.CheckState) {
+			boardState, err := board.ParseFen(fen)
+			assertSuccess(test, err)
+
+			wKing, bKing := boardState.GetKingPositions()
+			check, err := boardState.CheckOtherPieceChecks(
+				wKing, bKing,
+				&startingCheck,
+			)
+			assertSuccess(test, err)
+			assertCheckEquality(test, &endingCheck, check)
+		}
+
+		helper("K6P/1ppppppp/8/8/8/8/8/7k w 0",
+			board.CheckState{board.NoCheck, board.Position{}},
+			board.CheckState{board.NoCheck, board.Position{}})
+		helper("K7/2p5/8/8/8/8/8/7k w 0",
+			board.CheckState{board.NoCheck, board.Position{}},
+			board.CheckState{board.NoCheck, board.Position{}})
+		helper("K7/p7/8/8/8/8/8/7k w 0",
+			board.CheckState{board.NoCheck, board.Position{}},
+			board.CheckState{board.BlackCheck, board.Position{0, 1}})
+		helper("Kp6/1p6/8/8/8/8/8/7k w 0",
+			board.CheckState{board.NoCheck, board.Position{}},
+			board.CheckState{board.BlackCheck, board.Position{1, 0}})
+		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
+			board.CheckState{board.NoCheck, board.Position{}},
+			board.CheckState{board.BlackCheck, board.Position{2, 2}})
+		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
+			board.CheckState{board.NoCheck, board.Position{}},
+			board.CheckState{board.BlackCheck, board.Position{2, 2}})
+	})
+
+	test.Run("test checks", func(test *testing.T) {
+		test.Parallel()
+		helper := func(fen string, endingCheck *board.CheckState, shouldError bool) {
+			boardState, err := board.ParseFen(fen)
+			assertSuccess(test, err)
+
+			err = boardState.UpdateCheckState(shouldError)
+
+			if shouldError {
+				assertFailure(test, err)
+			} else {
+				assertSuccess(test, err)
+			}
+
+			check := &boardState.Check
+			assertCheckEquality(test, endingCheck, check)
+		}
+
+		helper("K6P/1ppppppp/8/8/8/8/8/7k w 0",
+			&board.CheckState{board.NoCheck, board.Position{}},
+			false)
+		helper("K7/2p5/8/8/8/8/8/7k w 0",
+			&board.CheckState{board.NoCheck, board.Position{}},
+			false)
+		helper("K7/p7/8/8/8/8/8/7k w 0",
+			&board.CheckState{board.BlackCheck, board.Position{0, 1}},
+			false)
+		helper("Kp6/1p6/8/8/8/8/8/7k w 0",
+			&board.CheckState{board.BlackCheck, board.Position{1, 0}},
+			false)
+		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
+			&board.CheckState{board.BlackCheck, board.Position{2, 2}},
+			false)
+		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
+			&board.CheckState{board.BlackCheck, board.Position{2, 2}},
+			false)
+		helper("KP6/P7/1nq5/8/8/8/8/7k w 0",
+			&board.CheckState{board.BlackDoubleCheck, board.Position{2, 2}},
+			false)
+		helper("KP6/P7/1nq5/8/8/8/8/6Rk w 0", nil, true)
 	})
 }
 
 func assertEq(test *testing.T, expected, received fmt.Stringer) {
 	test.Helper()
 	if expected != received {
-		test.Fatalf("expected: %s\nreceived: %s",
+		test.Fatalf("expected %s\nreceived: %s",
 			expected.String(), received.String())
-	}
-}
-
-func assertPieceInDirectionEquality(
-	test *testing.T,
-	expectedPiece,
-	recievedPiece board.Piece,
-	expectedPosition,
-	recievedPosition board.Position,
-) {
-	test.Helper()
-	if expectedPiece != recievedPiece || expectedPosition != recievedPosition {
-		test.Fatalf("expected piece %s at pos: %s, got %s at %s",
-			expectedPiece.String(),
-			expectedPosition.String(),
-			recievedPiece.String(),
-			recievedPosition.String())
 	}
 }
 
@@ -221,8 +238,8 @@ func assertBoardEquality(test *testing.T, expected, received *board.BoardState) 
 	}
 	if expected.Check != expected.Check {
 		equal = false
-		test.Errorf("expected Check: %s, received: %v",
-			expected.Check, received.Check)
+		test.Errorf("expected Check: %s, received: %s",
+			expected.Check.String(), received.Check.String())
 	}
 
 	if equal {
@@ -243,5 +260,13 @@ func assertStrEquality(test *testing.T, expected, received string) {
 	if expected != received {
 		test.Fatalf("expected:\n%s\nreceived:\n%s",
 			expected, received)
+	}
+}
+
+func assertCheckEquality(test *testing.T, expected, received *board.CheckState) {
+	test.Helper()
+	if *expected != *received {
+		test.Fatalf("expected: %s\nreceived: %s",
+			expected.String(), received.String())
 	}
 }
