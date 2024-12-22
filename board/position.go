@@ -24,7 +24,7 @@ func (pos *Position) AddMult(other Position, mult int8) Position {
 	return Position{pos.X + mult*other.X, pos.Y + mult*other.Y}
 }
 func (pos *Position) Diff(other Position) Position {
-	return pos.AddMult(other, -1)
+	return Position{pos.X - other.X, pos.Y - other.Y}
 }
 
 func positionToIndex(pos Position) int8 {
@@ -118,6 +118,6 @@ func AssertPositionsEqual(test *testing.T, pos1 Position, pos2 Position) {
 	test.Helper()
 	if pos1 != pos2 {
 		test.Fatalf("expected %s, received %s",
-			pos1.ToString(), pos2.ToString())
+			pos1.String(), pos2.String())
 	}
 }

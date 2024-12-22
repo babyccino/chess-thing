@@ -35,8 +35,11 @@ func (piece *Piece) IsBlack() bool {
 func (piece *Piece) IsDiagonalAttacker() bool {
 	switch *piece {
 	case WQueen:
+		fallthrough
 	case WBishop:
+		fallthrough
 	case BQueen:
+		fallthrough
 	case BBishop:
 		return true
 	}
@@ -44,7 +47,12 @@ func (piece *Piece) IsDiagonalAttacker() bool {
 }
 func (piece *Piece) IsStraightLongAttacker() bool {
 	switch *piece {
+	case WQueen:
+		fallthrough
 	case WRook:
+		fallthrough
+	case BQueen:
+		fallthrough
 	case BRook:
 		return true
 	}
@@ -122,13 +130,14 @@ func (state *CheckState) String() string {
 	return fmt.Sprintf("check: %s, position %s",
 		CheckToString(state.Check), state.From.String())
 }
-func (state *CheckState) thingyWhite() bool {
-	return debug || state.Check == NoCheck || state.Check == BlackCheck
+func (state *CheckState) InCheck(colour Colour) bool {
+	if colour == White {
+		return debug || state.Check == NoCheck || state.Check == BlackCheck
+	} else {
+		return debug || state.Check == NoCheck || state.Check == WhiteCheck
+	}
 }
-func (state *CheckState) thingyBlack() bool {
-	return debug || state.Check == NoCheck || state.Check == WhiteCheck
-}
-func (state *CheckState) promote(colour Colour) error {
+func (state *CheckState) Promote(colour Colour) error {
 	// TODO
 	if state.Check == NoCheck {
 		if colour == White {
@@ -223,6 +232,8 @@ func (board *BoardState) Move(start Position, end Position) error {
 	return nil
 }
 
+// check stuff
+
 func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position) {
 	for i, piece := range board.State {
 		if piece == WKing {
@@ -244,19 +255,15 @@ func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position) {
 
 const debug = true
 
-func (board *BoardState) CheckKnightChecks(wKing *Position,
-	bKing *Position,
-	findDouble bool) (*CheckState, error) {
+func (board *BoardState) CheckKnightChecks(
+	wKing *Position, bKing *Position,
+) (*CheckState, error) {
 	// check the knight checks first because a double knight check is not possible
 	check := NoCheck
 	from := Position{}
 	for _, vec := range directionArray[Knight1:] {
 		pos, inBounds := wKing.AddInBounds(vec)
 		if inBounds && board.GetSquare(pos) == BKnight {
-			if !findDouble {
-				return &CheckState{WhiteCheck, pos}, nil
-			}
-
 			if check != NoCheck {
 				err := fmt.Errorf("weird board state reached, check: %s\n\n%s",
 					CheckToString(check), board.String())
@@ -268,15 +275,7 @@ func (board *BoardState) CheckKnightChecks(wKing *Position,
 		}
 
 		pos, inBounds = bKing.AddInBounds(vec)
-		if inBounds {
-			fmt.Printf("checking for black %s, piece%s\n",
-				pos.String(), board.GetSquare(pos).String())
-		}
 		if inBounds && board.GetSquare(pos) == WKnight {
-			if !findDouble {
-				return &CheckState{BlackCheck, pos}, nil
-			}
-
 			if check != NoCheck {
 				err := fmt.Errorf("weird board state reached, check: %s\n\n%s",
 					CheckToString(check), board.String())
@@ -314,20 +313,22 @@ const (
 	Black        = true
 )
 
-func amBeingAttacked(king *Position, piece Piece, white Colour, piecePosition Position, diagonal bool) bool {
+func AmBeingAttacked(
+	king *Position, piece Piece, colour Colour,
+	piecePosition Position, diagonal bool,
+) bool {
 	if piece == Clear {
 		return false
 	}
-	if white && piece.IsWhite() {
-		return false
-	}
-	if !white && piece.IsBlack() {
+	if (colour == White) == piece.IsWhite() {
 		return false
 	}
 
+	diff := king.Diff(piecePosition)
 	if piece == BPawn {
-		diff := king.Diff(piecePosition)
-		return diff == Position{0, -1} || diff == Position{-1, 0}
+		return colour == White && (diff == DownVec || diff == RightVec)
+	} else if piece == WPawn {
+		return colour == Black && (diff == UpVec || diff == LeftVec)
 	} else if diagonal {
 		return piece.IsDiagonalAttacker()
 	} else {
@@ -335,35 +336,51 @@ func amBeingAttacked(king *Position, piece Piece, white Colour, piecePosition Po
 	}
 }
 
-func (board *BoardState) CheckOtherPieceChecks(wKing *Position, bKing *Position, check *CheckState) (*CheckState, error) {
-	for i, vec := range directionArray[:Knight1] {
-		diagonal := i <= int(UpRight)
-		if check.thingyWhite() {
-			piece, piecePosition := board.CheckInDirection(vec, wKing)
-			if amBeingAttacked(wKing, piece, White, piecePosition, diagonal) {
-				err := check.promote(White)
-				if err != nil {
-					return nil, err
-				}
+func (board *BoardState) otherPieceChecksImpl(
+	king *Position,
+	check *CheckState,
+	colour Colour,
+	dir Direction,
+) (*CheckState, error) {
+	diagonal := dir <= UpRight
+	vec := directionArray[dir]
 
-				if check.Check == WhiteDoubleCheck {
-					return check, nil
-				}
-			}
+	piece, piecePosition := board.CheckInDirection(vec, king)
+
+	if AmBeingAttacked(king, piece, colour, piecePosition, diagonal) {
+		if (colour == White && check.Check == BlackCheck || check.Check == BlackDoubleCheck) ||
+			(colour == Black && check.Check == WhiteCheck || check.Check == WhiteDoubleCheck) {
+			return nil, errors.New("both white and black kings are being attacked simultaneously")
 		}
 
-		if check.thingyBlack() {
-			piece, piecePosition := board.CheckInDirection(vec, bKing)
-			if amBeingAttacked(bKing, piece, Black, piecePosition, diagonal) {
-				err := check.promote(Black)
-				if err != nil {
-					return nil, err
-				}
+		err := check.Promote(colour)
+		if err != nil {
+			return nil, err
+		}
+		check.From = piecePosition
 
-				if check.Check == BlackDoubleCheck {
-					return check, nil
-				}
-			}
+		if check.Check == WhiteDoubleCheck {
+			return check, nil
+		}
+	}
+
+	return check, nil
+}
+
+func (board *BoardState) CheckOtherPieceChecks(
+	wKing, bKing *Position,
+	check *CheckState,
+) (*CheckState, error) {
+	var err error
+	for dir := Direction(DownRight); dir < Knight1; dir += 1 {
+		check, err = board.otherPieceChecksImpl(wKing, check, White, dir)
+		if err != nil {
+			return nil, err
+		}
+
+		check, err = board.otherPieceChecksImpl(bKing, check, Black, dir)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -373,15 +390,18 @@ func (board *BoardState) CheckOtherPieceChecks(wKing *Position, bKing *Position,
 func (board *BoardState) UpdateCheckState(findErr bool) error {
 	wKing, bKing := board.GetKingPositions()
 
-	check, err := board.CheckKnightChecks(wKing, bKing, findErr)
+	check, err := board.CheckKnightChecks(wKing, bKing)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("%s", check.String())
 
 	check, err = board.CheckOtherPieceChecks(wKing, bKing, check)
 	if err != nil {
 		return err
 	}
+
+	board.Check = *check
 
 	return nil
 }
@@ -404,6 +424,8 @@ func StringToPosition(str string) (Position, error) {
 	parsedRank := int8(rank - '1')
 	return Position{X: parsedFile, Y: parsedRank}, nil
 }
+
+// fen stuff
 
 var pieceToFenArr = [...]byte{
 	'/',
