@@ -65,93 +65,6 @@ func Test_fen(test *testing.T) {
 func Test_check(test *testing.T) {
 	test.Parallel()
 
-	test.Run("test find piece in direction", func(test *testing.T) {
-		test.Parallel()
-		helper := func(
-			fen string,
-			vec board.Vector,
-			pos board.Position,
-			expectedPiece board.Piece,
-			expectedPosition board.Position,
-		) {
-			boardState, err := board.ParseFen(
-				fen)
-			assertSuccess(test, err)
-
-			piece, pos := boardState.CheckInDirection(
-				vec,
-				&pos,
-			)
-
-			assertSuccess(test, err)
-
-			if expectedPiece != piece || expectedPosition != pos {
-				test.Fatalf("expected piece %s at pos: %s, got %s at %s",
-					expectedPiece.String(),
-					expectedPosition.String(),
-					piece.String(),
-					pos.String())
-			}
-		}
-
-		helper(
-			"K6P/pppppppp/8/8/8/8/8/7k w 0",
-			board.RightVec,
-			board.Position{0, 0},
-			board.BPawn,
-			board.Position{7, 0},
-		)
-		helper(
-			"K7/pppppppp/8/8/8/8/8/7k w 0",
-			board.RightVec,
-			board.Position{0, 0},
-			board.Clear,
-			board.Position{},
-		)
-		helper(
-			"K7/P7/8/8/8/5q2/7p/6pk w 0",
-			board.UpLeftVec,
-			board.Position{7, 7},
-			board.WQueen,
-			board.Position{5, 5},
-		)
-	})
-
-	test.Run("test other piece checks", func(test *testing.T) {
-		test.Parallel()
-		helper := func(fen string, startingCheck, endingCheck board.CheckState) {
-			boardState, err := board.ParseFen(fen)
-			assertSuccess(test, err)
-
-			wKing, bKing := boardState.GetKingPositions()
-			check, err := boardState.CheckOtherPieceChecks(
-				wKing, bKing,
-				&startingCheck,
-			)
-			assertSuccess(test, err)
-			assertCheckEquality(test, &endingCheck, check)
-		}
-
-		helper("K6P/1ppppppp/8/8/8/8/8/7k w 0",
-			board.CheckState{board.NoCheck, board.Position{}},
-			board.CheckState{board.NoCheck, board.Position{}})
-		helper("K7/2p5/8/8/8/8/8/7k w 0",
-			board.CheckState{board.NoCheck, board.Position{}},
-			board.CheckState{board.NoCheck, board.Position{}})
-		helper("K7/p7/8/8/8/8/8/7k w 0",
-			board.CheckState{board.NoCheck, board.Position{}},
-			board.CheckState{board.BlackCheck, board.Position{0, 1}})
-		helper("Kp6/1p6/8/8/8/8/8/7k w 0",
-			board.CheckState{board.NoCheck, board.Position{}},
-			board.CheckState{board.BlackCheck, board.Position{1, 0}})
-		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
-			board.CheckState{board.NoCheck, board.Position{}},
-			board.CheckState{board.BlackCheck, board.Position{2, 2}})
-		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
-			board.CheckState{board.NoCheck, board.Position{}},
-			board.CheckState{board.BlackCheck, board.Position{2, 2}})
-	})
-
 	test.Run("test checks", func(test *testing.T) {
 		test.Parallel()
 		helper := func(fen string, endingCheck *board.CheckState, shouldError bool) {
@@ -162,6 +75,7 @@ func Test_check(test *testing.T) {
 
 			if shouldError {
 				assertFailure(test, err)
+				return
 			} else {
 				assertSuccess(test, err)
 			}

@@ -27,7 +27,7 @@ const (
 )
 
 func (piece *Piece) IsWhite() bool {
-	return *piece != Clear && *piece <= BRook
+	return *piece != Clear && *piece < BKing
 }
 func (piece *Piece) IsBlack() bool {
 	return *piece >= BKing
@@ -78,6 +78,16 @@ var pieceToStrArr = [...]rune{
 func (piece Piece) String() string {
 	return string(pieceToStrArr[piece])
 }
+func (piece Piece) StringDebug() string {
+	pieceChar := pieceToStrArr[piece]
+	if piece == Clear {
+		return string(pieceChar)
+	} else if piece.IsBlack() {
+		return "black " + string(pieceChar)
+	} else {
+		return "white " + string(pieceChar)
+	}
+}
 
 // func isDiagonalAttacking(piece Piece) bool {
 // 	return direction <= UpRight
@@ -100,6 +110,13 @@ const (
 	BlackCheck
 	BlackDoubleCheck
 )
+
+func checkIsWhite(check Check) bool {
+	return check == WhiteCheck || check == WhiteDoubleCheck
+}
+func checkIsBlack(check Check) bool {
+	return check >= BlackCheck
+}
 
 func CheckToString(check Check) string {
 	switch check {
@@ -346,10 +363,12 @@ func (board *BoardState) otherPieceChecksImpl(
 	vec := directionArray[dir]
 
 	piece, piecePosition := board.CheckInDirection(vec, king)
+	fmt.Printf("color: %t, piece: %s\n", colour, piece.StringDebug())
 
 	if AmBeingAttacked(king, piece, colour, piecePosition, diagonal) {
-		if (colour == White && check.Check == BlackCheck || check.Check == BlackDoubleCheck) ||
-			(colour == Black && check.Check == WhiteCheck || check.Check == WhiteDoubleCheck) {
+		// fmt.Printf("color: %t, check: %s, piece: %s\n", colour, check, piece)
+		if (colour == White && checkIsBlack(check.Check)) ||
+			(colour == Black && checkIsWhite(check.Check)) {
 			return nil, errors.New("both white and black kings are being attacked simultaneously")
 		}
 
