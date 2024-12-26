@@ -6,57 +6,90 @@ import (
 	"strconv"
 )
 
-type Piece int8
+type Piece uint8
+type Colour = uint8
+
+func ColourString(colour Colour) string {
+	if colour == White {
+		return "white"
+	} else {
+		return "black"
+	}
+}
+
+/*
+clear colour piece pinned
+0     0      010   1
+*/
 
 const (
-	Clear Piece = iota
-	WKing
-	WQueen
-	WBishop
-	WKnight
-	WPawn
-	WRook
-	BKing
-	BQueen
-	BBishop
-	BKnight
-	BPawn
-	BRook
-
-	ErrorPiece Piece = -1
+	Clear    Piece = 0b0
+	NotClear       = 0b1
 )
 
+const (
+	ClearMask  Piece = 0b000001
+	ColourMask Piece = 0b000010
+	PieceMask        = 0b011100
+	PinMask          = 0b100000
+)
+
+const (
+	ColourShift uint8 = 1
+	PieceShift        = 2
+	PinShift          = 5
+)
+
+const (
+	White Colour = 0
+	Black        = 1
+	None         = 2
+)
+
+const (
+	King Piece = iota
+	Queen
+	Bishop
+	Knight
+	Pawn
+	Rook
+)
+
+const shiftedBlack = Piece(Black) << ColourShift
+const (
+	WKing   Piece = NotClear | King<<PieceShift
+	WQueen        = NotClear | Queen<<PieceShift
+	WBishop       = NotClear | Bishop<<PieceShift
+	WKnight       = NotClear | Knight<<PieceShift
+	WPawn         = NotClear | Pawn<<PieceShift
+	WRook         = NotClear | Rook<<PieceShift
+	BKing         = NotClear | King<<PieceShift | shiftedBlack
+	BQueen        = NotClear | Queen<<PieceShift | shiftedBlack
+	BBishop       = NotClear | Bishop<<PieceShift | shiftedBlack
+	BKnight       = NotClear | Knight<<PieceShift | shiftedBlack
+	BPawn         = NotClear | Pawn<<PieceShift | shiftedBlack
+	BRook         = NotClear | Rook<<PieceShift | shiftedBlack
+)
+
+func (piece *Piece) Colour() Colour {
+	return Colour((*piece & ColourMask) >> ColourShift)
+}
 func (piece *Piece) IsWhite() bool {
-	return *piece != Clear && *piece < BKing
+	return piece.Colour() == White
 }
 func (piece *Piece) IsBlack() bool {
-	return *piece >= BKing
+	return piece.Colour() == Black
+}
+func (piece *Piece) PieceType() Piece {
+	return (*piece & PieceMask) >> PieceShift
 }
 func (piece *Piece) IsDiagonalAttacker() bool {
-	switch *piece {
-	case WQueen:
-		fallthrough
-	case WBishop:
-		fallthrough
-	case BQueen:
-		fallthrough
-	case BBishop:
-		return true
-	}
-	return false
+	pieceType := piece.PieceType()
+	return pieceType == Queen || pieceType == Bishop
 }
 func (piece *Piece) IsStraightLongAttacker() bool {
-	switch *piece {
-	case WQueen:
-		fallthrough
-	case WRook:
-		fallthrough
-	case BQueen:
-		fallthrough
-	case BRook:
-		return true
-	}
-	return false
+	pieceType := piece.PieceType()
+	return pieceType == Queen || pieceType == Rook
 }
 
 var pieceToStrArr = [...]rune{
@@ -76,16 +109,22 @@ var pieceToStrArr = [...]rune{
 }
 
 func (piece Piece) String() string {
-	return string(pieceToStrArr[piece])
+	if piece == Clear {
+		return " "
+	}
+
+	pieceType := piece.PieceType()
+	index := 1 + uint8(pieceType) + 6*piece.Colour()
+	return string(pieceToStrArr[index])
 }
 func (piece Piece) StringDebug() string {
-	pieceChar := pieceToStrArr[piece]
+	pieceChar := piece.String()
 	if piece == Clear {
-		return string(pieceChar)
+		return pieceChar
 	} else if piece.IsBlack() {
-		return "black " + string(pieceChar)
+		return "black " + pieceChar
 	} else {
-		return "white " + string(pieceChar)
+		return "white " + pieceChar
 	}
 }
 
@@ -307,7 +346,7 @@ func (board *BoardState) CheckKnightChecks(
 	return &CheckState{check, from}, nil
 }
 
-func (board *BoardState) CheckInDirection(vec Vector, pos *Position) (Piece, Position) {
+func (board *BoardState) FindInDirection(vec Vector, pos *Position) (Piece, Position) {
 	posCopy := *pos
 	for {
 		var inBounds bool
@@ -322,13 +361,6 @@ func (board *BoardState) CheckInDirection(vec Vector, pos *Position) (Piece, Pos
 		}
 	}
 }
-
-type Colour = bool
-
-const (
-	White Colour = false
-	Black        = true
-)
 
 func AmBeingAttacked(
 	king *Position, piece Piece, colour Colour,
@@ -362,8 +394,14 @@ func (board *BoardState) otherPieceChecksImpl(
 	diagonal := dir <= UpRight
 	vec := directionArray[dir]
 
-	piece, piecePosition := board.CheckInDirection(vec, king)
-	fmt.Printf("color: %t, piece: %s\n", colour, piece.StringDebug())
+	piece, piecePosition := board.FindInDirection(vec, king)
+	fmt.Printf("color: %s, piece: %s\n",
+		ColourString(colour),
+		piece.StringDebug())
+
+	if piece == Clear {
+		return check, nil
+	}
 
 	if AmBeingAttacked(king, piece, colour, piecePosition, diagonal) {
 		// fmt.Printf("color: %t, check: %s, piece: %s\n", colour, check, piece)
@@ -381,6 +419,8 @@ func (board *BoardState) otherPieceChecksImpl(
 		if check.Check == WhiteDoubleCheck {
 			return check, nil
 		}
+	} else if piece.Colour() == colour {
+
 	}
 
 	return check, nil
@@ -462,6 +502,17 @@ var pieceToFenArr = [...]byte{
 	'R',
 }
 
+func getPieceByte(piece Piece) byte {
+	if piece == Clear {
+		return '/'
+	}
+
+	pieceType := piece.PieceType()
+	index := 1 + uint8(pieceType) + uint8(6*piece.Colour())
+	fmt.Printf("type: %d, colour: %d", pieceType, piece.Colour())
+	return pieceToFenArr[index]
+}
+
 func rowIntToByte(row int) byte {
 	return byte('0' + row)
 }
@@ -478,7 +529,7 @@ func (board *BoardState) Fen() string {
 		}
 
 		if piece > Clear {
-			ret += string(pieceToFenArr[piece])
+			ret += string(getPieceByte(piece))
 		}
 
 		if index%8 == 7 {
@@ -503,36 +554,36 @@ func (board *BoardState) Fen() string {
 	return ret
 }
 
-func getPiece(char rune) Piece {
+func getPiece(char rune) (Piece, error) {
 	switch char {
 	case 'k':
-		return WKing
+		return WKing, nil
 	case 'q':
-		return WQueen
+		return WQueen, nil
 	case 'b':
-		return WBishop
+		return WBishop, nil
 	case 'n':
-		return WKnight
+		return WKnight, nil
 	case 'p':
-		return WPawn
+		return WPawn, nil
 	case 'r':
-		return WRook
+		return WRook, nil
 	case 'K':
-		return BKing
+		return BKing, nil
 	case 'Q':
-		return BQueen
+		return BQueen, nil
 	case 'B':
-		return BBishop
+		return BBishop, nil
 	case 'N':
-		return BKnight
+		return BKnight, nil
 	case 'P':
-		return BPawn
+		return BPawn, nil
 	case 'R':
-		return BRook
+		return BRook, nil
 	case '/':
-		return Clear
+		return Clear, nil
 	default:
-		return ErrorPiece
+		return 0, errors.New("the charcter is an invalid")
 	}
 }
 
@@ -564,7 +615,11 @@ func ParseFen(fen string) (*BoardState, error) {
 			continue
 		}
 
-		piece := getPiece(char)
+		piece, err := getPiece(char)
+
+		if err != nil {
+			return nil, fmt.Errorf("unexpected character found: %s ", string(char))
+		}
 
 		if piece == Clear {
 			if stateIndex%8 != 0 {
@@ -582,14 +637,9 @@ func ParseFen(fen string) (*BoardState, error) {
 			// fmt.Printf("%s, %d, %d\n", string(char), stateIndex, rowIndex)
 			rowIndex = 0
 			continue
-		} else if piece == ErrorPiece {
-			errorStr := fmt.Sprintf("unexpected character found: %s ", string(char))
-			return nil, errors.New(errorStr)
 		} else {
 			state[stateIndex] = piece
 		}
-
-		// fmt.Printf("%s, %d, %d\n", string(char), stateIndex, rowIndex)
 
 		stateIndex += 1
 		rowIndex += 1
@@ -626,7 +676,7 @@ func ParseFen(fen string) (*BoardState, error) {
 	}
 
 	moveCounter = moveCounter * 2
-	if !color {
+	if color == Black {
 		moveCounter += 1
 	}
 
