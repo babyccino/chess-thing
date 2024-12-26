@@ -62,12 +62,19 @@ func Test_fen(test *testing.T) {
 	})
 }
 
+type PositionSet = map[board.Position]struct{}
+
 func Test_check(test *testing.T) {
 	test.Parallel()
 
 	test.Run("test checks", func(test *testing.T) {
 		test.Parallel()
-		helper := func(fen string, endingCheck *board.CheckState, shouldError bool) {
+		helper := func(
+			fen string,
+			endingCheck *board.CheckState,
+			shouldError bool,
+			pinnedPieces PositionSet,
+		) {
 			boardState, err := board.ParseFen(fen)
 			assertSuccess(test, err)
 
@@ -82,30 +89,79 @@ func Test_check(test *testing.T) {
 
 			check := &boardState.Check
 			assertCheckEquality(test, endingCheck, check)
+
+			for i := range int8(64) {
+				pos := board.IndexToPosition(i)
+				_, found := pinnedPieces[pos]
+				piece := boardState.GetSquare(pos)
+				if found {
+					if !piece.IsPinned() {
+						test.Errorf("The %s at %s was expected to be pinned but was not",
+							piece.StringDebug(), pos.String())
+					}
+				} else {
+					if piece.IsPinned() {
+						test.Errorf("The %s at %s was expected to not be pinned but was not",
+							piece.StringDebug(), pos.String())
+					}
+				}
+			}
 		}
 
 		helper("K6P/1ppppppp/8/8/8/8/8/7k w 0",
 			&board.CheckState{board.NoCheck, board.Position{}},
-			false)
-		helper("K7/2p5/8/8/8/8/8/7k w 0",
+			false,
+			nil)
+
+		// queen should be pinned
+		helper("K7/1pp5/8/8/4B3/8/6q1/7k w 0",
 			&board.CheckState{board.NoCheck, board.Position{}},
-			false)
-		helper("K7/p7/8/8/8/8/8/7k w 0",
-			&board.CheckState{board.BlackCheck, board.Position{0, 1}},
-			false)
+			false,
+			PositionSet{{6, 6}: {}})
+
+		// now a rook is between the queen and the bishop so the pin is broken
+		helper("K7/p7/8/8/4B3/5r2/6q1/7k w 0",
+			&board.CheckState{
+				board.BlackCheck, board.Position{0, 1},
+			},
+			false,
+			nil)
+
 		helper("Kp6/1p6/8/8/8/8/8/7k w 0",
-			&board.CheckState{board.BlackCheck, board.Position{1, 0}},
-			false)
+			&board.CheckState{
+				board.BlackCheck, board.Position{1, 0},
+			},
+			false,
+			nil)
+
+		helper("KP6/P7/r1q5/8/8/8/8/7k w 0",
+			&board.CheckState{
+				board.BlackCheck, board.Position{2, 2},
+			},
+			false,
+			PositionSet{{0, 1}: {}})
+
 		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
-			&board.CheckState{board.BlackCheck, board.Position{2, 2}},
-			false)
-		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
-			&board.CheckState{board.BlackCheck, board.Position{2, 2}},
-			false)
+			&board.CheckState{
+				board.BlackCheck, board.Position{2, 2},
+			},
+			false,
+			nil)
+
 		helper("KP6/P7/1nq5/8/8/8/8/7k w 0",
-			&board.CheckState{board.BlackDoubleCheck, board.Position{2, 2}},
-			false)
-		helper("KP6/P7/1nq5/8/8/8/8/6Rk w 0", nil, true)
+			&board.CheckState{
+				board.BlackDoubleCheck, board.Position{2, 2},
+			},
+			false,
+			nil)
+
+		helper("KP6/P7/b7/r7/8/8/8/7k w 0",
+			&board.CheckState{board.NoCheck, board.Position{}},
+			false,
+			nil)
+
+		helper("KP6/P7/1nq5/8/8/8/8/6Rk w 0", nil, true,
+			nil)
 	})
 }
 
