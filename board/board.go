@@ -19,7 +19,7 @@ func ColourString(colour Colour) string {
 
 /*
 pinned piece colour clear
-0      011   0      1
+100    011   0      1
 */
 
 // clear (no piece on that square) = 0b0
@@ -29,10 +29,10 @@ const (
 )
 
 const (
-	ClearMask  Piece = 0b000001
-	ColourMask Piece = 0b000010
-	PieceMask        = 0b011100
-	PinMask          = 0b100000
+	ClearMask  Piece = 0b00000001
+	ColourMask       = 0b00000010
+	PieceMask        = 0b00011100
+	PinMask          = 0b11100000
 )
 
 const (
@@ -40,6 +40,33 @@ const (
 	PieceShift        = 2
 	PinShift          = 5
 )
+
+type PinDirection = uint8
+
+const (
+	NoPin        PinDirection = 0b000
+	DownRightPin              = 0b001
+	DownLeftPin               = 0b010
+	DownPin                   = 0b011
+	RightPin                  = 0b100
+)
+
+func PinToString(pin PinDirection) string {
+	switch pin {
+	case NoPin:
+		return "no pin"
+	case DownRightPin:
+		return "down right pin"
+	case DownLeftPin:
+		return "down left pin"
+	case DownPin:
+		return "down pin"
+	case RightPin:
+		return "right pin"
+	default:
+		return ""
+	}
+}
 
 const (
 	White Colour = 0
@@ -93,13 +120,41 @@ func (piece Piece) IsStraightLongAttacker() bool {
 	return pieceType == Queen || pieceType == Rook
 }
 
-const shiftedPinned = 0b1 << PinShift
-
-func (piece Piece) Pinned() Piece {
-	return piece | shiftedPinned
+func (piece Piece) Pin(pin PinDirection) Piece {
+	return piece | (Piece(pin) << PinShift)
 }
 func (piece Piece) IsPinned() bool {
-	return (piece & PinMask) == shiftedPinned
+	return piece&PinMask != 0b0
+}
+func (piece Piece) GetPin() PinDirection {
+	return PinDirection(piece&PinMask) >> PinShift
+}
+
+func directionToPinDirection(dir Direction) PinDirection {
+	switch dir {
+	case UpLeft:
+		fallthrough
+	case DownRight:
+		return DownRightPin
+
+	case UpRight:
+		fallthrough
+	case DownLeft:
+		return DownLeftPin
+
+	case Up:
+		fallthrough
+	case Down:
+		return DownPin
+
+	case Left:
+		fallthrough
+	case Right:
+		return RightPin
+
+	default:
+		panic("can not pin with a knight")
+	}
 }
 
 var pieceToStrArr = [...]rune{
@@ -437,7 +492,8 @@ func (board *BoardState) otherPieceChecksImpl(
 			pinningPiecePosition,
 			diagonal,
 		) {
-			board.SetSquare(piecePosition, piece.Pinned())
+			board.SetSquare(piecePosition,
+				piece.Pin(directionToPinDirection(dir)))
 		}
 	}
 
