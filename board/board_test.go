@@ -62,7 +62,7 @@ func Test_fen(test *testing.T) {
 	})
 }
 
-type PositionSet = map[board.Position]struct{}
+type PinMap = map[board.Position]board.PinDirection
 
 func Test_check(test *testing.T) {
 	test.Parallel()
@@ -73,7 +73,7 @@ func Test_check(test *testing.T) {
 			fen string,
 			endingCheck *board.CheckState,
 			shouldError bool,
-			pinnedPieces PositionSet,
+			pinnedPieces PinMap,
 		) {
 			boardState, err := board.ParseFen(fen)
 			assertSuccess(test, err)
@@ -92,12 +92,15 @@ func Test_check(test *testing.T) {
 
 			for i := range int8(64) {
 				pos := board.IndexToPosition(i)
-				_, found := pinnedPieces[pos]
+				expectedPin, found := pinnedPieces[pos]
 				piece := boardState.GetSquare(pos)
+				receivedPin := piece.GetPin()
 				if found {
-					if !piece.IsPinned() {
-						test.Errorf("The %s at %s was expected to be pinned but was not",
-							piece.StringDebug(), pos.String())
+					if receivedPin != expectedPin {
+						test.Errorf(
+							"The %s at %s was expected to be pinned %s but was pinned %s",
+							piece.StringDebug(), pos.String(),
+							board.PinToString(expectedPin), board.PinToString(receivedPin))
 					}
 				} else {
 					if piece.IsPinned() {
@@ -117,7 +120,7 @@ func Test_check(test *testing.T) {
 		helper("K7/1pp5/8/8/4B3/8/6q1/7k w 0",
 			&board.CheckState{board.NoCheck, board.Position{}},
 			false,
-			PositionSet{{6, 6}: {}})
+			PinMap{{6, 6}: board.DownRightPin})
 
 		// now a rook is between the queen and the bishop so the pin is broken
 		helper("K7/p7/8/8/4B3/5r2/6q1/7k w 0",
@@ -139,7 +142,7 @@ func Test_check(test *testing.T) {
 				board.BlackCheck, board.Position{2, 2},
 			},
 			false,
-			PositionSet{{0, 1}: {}})
+			PinMap{{0, 1}: board.DownPin})
 
 		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
 			&board.CheckState{
