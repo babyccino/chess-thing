@@ -18,10 +18,11 @@ func ColourString(colour Colour) string {
 }
 
 /*
-clear colour piece pinned
-0     0      010   1
+pinned piece colour clear
+0      011   0      1
 */
 
+// clear (no piece on that square) = 0b0
 const (
 	Clear    Piece = 0b0
 	NotClear       = 0b1
@@ -71,25 +72,34 @@ const (
 	BRook         = NotClear | Rook<<PieceShift | shiftedBlack
 )
 
-func (piece *Piece) Colour() Colour {
-	return Colour((*piece & ColourMask) >> ColourShift)
+func (piece Piece) Colour() Colour {
+	return Colour((piece & ColourMask) >> ColourShift)
 }
-func (piece *Piece) IsWhite() bool {
+func (piece Piece) IsWhite() bool {
 	return piece.Colour() == White
 }
-func (piece *Piece) IsBlack() bool {
+func (piece Piece) IsBlack() bool {
 	return piece.Colour() == Black
 }
-func (piece *Piece) PieceType() Piece {
-	return (*piece & PieceMask) >> PieceShift
+func (piece Piece) PieceType() Piece {
+	return (piece & PieceMask) >> PieceShift
 }
-func (piece *Piece) IsDiagonalAttacker() bool {
+func (piece Piece) IsDiagonalAttacker() bool {
 	pieceType := piece.PieceType()
 	return pieceType == Queen || pieceType == Bishop
 }
-func (piece *Piece) IsStraightLongAttacker() bool {
+func (piece Piece) IsStraightLongAttacker() bool {
 	pieceType := piece.PieceType()
 	return pieceType == Queen || pieceType == Rook
+}
+
+const shiftedPinned = 0b1 << PinShift
+
+func (piece Piece) Pinned() Piece {
+	return piece | shiftedPinned
+}
+func (piece Piece) IsPinned() bool {
+	return (piece & PinMask) == shiftedPinned
 }
 
 var pieceToStrArr = [...]rune{
@@ -108,14 +118,13 @@ var pieceToStrArr = [...]rune{
 	'♜',
 }
 
+func (piece Piece) Rune() rune {
+	index := Piece(0)
+	index += (NotClear & piece) * (1 + piece.PieceType() + Piece(6*piece.Colour()))
+	return pieceToStrArr[index]
+}
 func (piece Piece) String() string {
-	if piece == Clear {
-		return " "
-	}
-
-	pieceType := piece.PieceType()
-	index := 1 + uint8(pieceType) + 6*piece.Colour()
-	return string(pieceToStrArr[index])
+	return string(piece.Rune())
 }
 func (piece Piece) StringDebug() string {
 	pieceChar := piece.String()
@@ -293,11 +302,11 @@ func (board *BoardState) Move(start Position, end Position) error {
 func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position) {
 	for i, piece := range board.State {
 		if piece == WKing {
-			newKing := indexToPosition(int8(i))
+			newKing := IndexToPosition(int8(i))
 			wKing = &newKing
 		}
 		if piece == BKing {
-			newKing := indexToPosition(int8(i))
+			newKing := IndexToPosition(int8(i))
 			bKing = &newKing
 		}
 	}
@@ -420,7 +429,16 @@ func (board *BoardState) otherPieceChecksImpl(
 			return check, nil
 		}
 	} else if piece.Colour() == colour {
-
+		pinningPiece, pinningPiecePosition := board.FindInDirection(vec, &piecePosition)
+		if AmBeingAttacked(
+			king,
+			pinningPiece,
+			colour,
+			pinningPiecePosition,
+			diagonal,
+		) {
+			board.SetSquare(piecePosition, piece.Pinned())
+		}
 	}
 
 	return check, nil
@@ -502,15 +520,13 @@ var pieceToFenArr = [...]byte{
 	'R',
 }
 
-func getPieceByte(piece Piece) byte {
-	if piece == Clear {
-		return '/'
-	}
-
-	pieceType := piece.PieceType()
-	index := 1 + uint8(pieceType) + uint8(6*piece.Colour())
-	fmt.Printf("type: %d, colour: %d", pieceType, piece.Colour())
+func (piece Piece) FenByte() byte {
+	index := Piece(0)
+	index += (NotClear & piece) * (1 + piece.PieceType() + Piece(6*piece.Colour()))
 	return pieceToFenArr[index]
+}
+func (piece Piece) FenString() string {
+	return string(piece.FenByte())
 }
 
 func rowIntToByte(row int) byte {
@@ -529,7 +545,7 @@ func (board *BoardState) Fen() string {
 		}
 
 		if piece > Clear {
-			ret += string(getPieceByte(piece))
+			ret += piece.FenString()
 		}
 
 		if index%8 == 7 {

@@ -30,8 +30,7 @@ func (pos *Position) Diff(other Position) Position {
 func positionToIndex(pos Position) int8 {
 	return pos.X + 8*pos.Y
 }
-
-func indexToPosition(index int8) Position {
+func IndexToPosition(index int8) Position {
 	y := index / 8
 	x := index % 8
 	return Position{x, y}
