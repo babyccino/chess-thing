@@ -56,13 +56,13 @@ func PinToString(pin PinDirection) string {
 	case NoPin:
 		return "no pin"
 	case DownRightPin:
-		return "down right pin"
+		return "down right/up left pin"
 	case DownLeftPin:
-		return "down left pin"
+		return "down left/up right pin"
 	case DownPin:
-		return "down pin"
+		return "down/up pin"
 	case RightPin:
-		return "right pin"
+		return "right/left pin"
 	default:
 		return ""
 	}
@@ -459,16 +459,12 @@ func (board *BoardState) otherPieceChecksImpl(
 	vec := directionArray[dir]
 
 	piece, piecePosition := board.FindInDirection(vec, king)
-	fmt.Printf("color: %s, piece: %s\n",
-		ColourString(colour),
-		piece.StringDebug())
 
 	if piece == Clear {
 		return check, nil
 	}
 
 	if AmBeingAttacked(king, piece, colour, piecePosition, diagonal) {
-		// fmt.Printf("color: %t, check: %s, piece: %s\n", colour, check, piece)
 		if (colour == White && checkIsBlack(check.Check)) ||
 			(colour == Black && checkIsWhite(check.Check)) {
 			return nil, errors.New("both white and black kings are being attacked simultaneously")
