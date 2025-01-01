@@ -1,6 +1,7 @@
 package board
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -30,15 +31,37 @@ func (pos *Position) Diff(other Position) Position {
 func positionToIndex(pos Position) int8 {
 	return pos.X + 8*pos.Y
 }
-func IndexToPosition(index int8) Position {
+func IndexToPosition(index int) Position {
 	y := index / 8
 	x := index % 8
-	return Position{x, y}
+	return Position{int8(x), int8(y)}
+}
+
+func StringToPosition(str string) (Position, error) {
+	if len(str) != 2 {
+		return Position{}, errors.New("string must be of length 2")
+	}
+
+	file := str[0]
+	rank := str[1]
+	if file < 'A' || file > 'H' {
+		return Position{}, errors.New("rank out of bounds")
+	}
+	if rank < '1' || rank > '8' {
+		return Position{}, errors.New("rank out of bounds")
+	}
+
+	parsedFile := int8(file - 'A')
+	parsedRank := int8(rank - '1')
+	return Position{X: parsedFile, Y: parsedRank}, nil
 }
 
 func (pos *Position) AddInBounds(other Position) (Position, bool) {
-	newX := pos.X + other.X
-	newY := pos.Y + other.Y
+	return pos.AddInBoundsMult(other, 1)
+}
+func (pos *Position) AddInBoundsMult(other Position, mult int8) (Position, bool) {
+	newX := pos.X + mult*other.X
+	newY := pos.Y + mult*other.Y
 
 	if newX < 0 || newX >= 8 || newY < 0 || newY >= 8 {
 		return Position{}, false
@@ -108,6 +131,10 @@ var directionArray = [...]Vector{
 	Knight5Vec, Knight6Vec,
 	Knight7Vec, Knight8Vec,
 }
+var diagonalDirectionArray = directionArray[:Up]
+var straightDirectionArray = directionArray[Up:Knight1]
+var nonKnightDirectionArray = directionArray[:Knight1]
+var knightDirectionArray = directionArray[Knight1:]
 
 func directionToVec(dir Direction) Vector {
 	return directionArray[dir]

@@ -6,8 +6,8 @@ import (
 	"strconv"
 )
 
-type Piece uint8
-type Colour = uint8
+type Piece uint16
+type Colour uint8
 
 func ColourString(colour Colour) string {
 	if colour == White {
@@ -16,10 +16,27 @@ func ColourString(colour Colour) string {
 		return "black"
 	}
 }
+func oppositeColour(colour Colour) Colour {
+	if colour == White {
+		return Black
+	}
+	if colour == Black {
+		return White
+	}
+	return None
+}
 
 /*
-pinned piece colour clear
-100    011   0      1
+check_square attacked pinned piece colour clear
+0            01       100    011   0      1
+
+if there is a white piece on a square and it white attacked then that piece is defended
+i.e. cannot be taken by the black king
+
+check_square is a square a piece needs to move to _resolve_ a check
+this includes the square the checking piece is on,
+so the check is resolved by the piece being captures
+or a blocking square
 */
 
 // clear (no piece on that square) = 0b0
@@ -29,16 +46,20 @@ const (
 )
 
 const (
-	ClearMask  Piece = 0b00000001
-	ColourMask       = 0b00000010
-	PieceMask        = 0b00011100
-	PinMask          = 0b11100000
+	ClearMask    Piece = 0b00000000001
+	ColourMask         = 0b00000000010
+	PieceMask          = 0b00000011100
+	PinMask            = 0b00011100000
+	AttackedMask       = 0b01100000000
+	CheckMask          = 0b10000000000
 )
 
 const (
-	ColourShift uint8 = 1
-	PieceShift        = 2
-	PinShift          = 5
+	ColourShift   uint8 = 1
+	PieceShift          = 2
+	PinShift            = 5
+	AttackedShift       = 7
+	CheckShift          = 8
 )
 
 type PinDirection = uint8
@@ -69,9 +90,10 @@ func PinToString(pin PinDirection) string {
 }
 
 const (
-	White Colour = 0
-	Black        = 1
-	None         = 2
+	White Colour = iota
+	Black
+	None
+	Both
 )
 
 const (
@@ -83,14 +105,15 @@ const (
 	Rook
 )
 
+const shiftedWhite = Piece(White) << ColourShift
 const shiftedBlack = Piece(Black) << ColourShift
 const (
-	WKing   Piece = NotClear | King<<PieceShift
-	WQueen        = NotClear | Queen<<PieceShift
-	WBishop       = NotClear | Bishop<<PieceShift
-	WKnight       = NotClear | Knight<<PieceShift
-	WPawn         = NotClear | Pawn<<PieceShift
-	WRook         = NotClear | Rook<<PieceShift
+	WKing   Piece = NotClear | King<<PieceShift | shiftedWhite
+	WQueen        = NotClear | Queen<<PieceShift | shiftedWhite
+	WBishop       = NotClear | Bishop<<PieceShift | shiftedWhite
+	WKnight       = NotClear | Knight<<PieceShift | shiftedWhite
+	WPawn         = NotClear | Pawn<<PieceShift | shiftedWhite
+	WRook         = NotClear | Rook<<PieceShift | shiftedWhite
 	BKing         = NotClear | King<<PieceShift | shiftedBlack
 	BQueen        = NotClear | Queen<<PieceShift | shiftedBlack
 	BBishop       = NotClear | Bishop<<PieceShift | shiftedBlack
@@ -102,11 +125,20 @@ const (
 func (piece Piece) Colour() Colour {
 	return Colour((piece & ColourMask) >> ColourShift)
 }
+func (piece Piece) Is(other Piece) bool {
+	return piece&PieceMask == other&PieceMask
+}
+func (piece Piece) IsPieceAndColour(other Piece) bool {
+	return piece&(PieceMask|ColourMask) == other&(PieceMask|ColourMask)
+}
 func (piece Piece) IsWhite() bool {
 	return piece.Colour() == White
 }
 func (piece Piece) IsBlack() bool {
 	return piece.Colour() == Black
+}
+func (piece Piece) IsClear() bool {
+	return piece&ClearMask == Clear
 }
 func (piece Piece) PieceType() Piece {
 	return (piece & PieceMask) >> PieceShift
@@ -128,6 +160,21 @@ func (piece Piece) IsPinned() bool {
 }
 func (piece Piece) GetPin() PinDirection {
 	return PinDirection(piece&PinMask) >> PinShift
+}
+
+func (piece Piece) GetAttacked() Colour {
+	return Colour(piece&AttackedMask) >> AttackedShift
+}
+func (piece Piece) Attacked(colour Colour) Piece {
+	return piece | (Piece(colour) << AttackedShift)
+}
+
+func (piece Piece) IsCheckSquare() bool {
+	return piece&CheckMask == CheckMask
+}
+
+func (piece Piece) Reset() Piece {
+	return piece & (ColourMask | PieceMask | ClearMask)
 }
 
 func directionToPinDirection(dir Direction) PinDirection {
@@ -192,17 +239,7 @@ func (piece Piece) StringDebug() string {
 	}
 }
 
-// func isDiagonalAttacking(piece Piece) bool {
-// 	return direction <= UpRight
-// }
-// func isStraight(direction Direction) bool {
-// 	return direction >= Up && direction <= Right
-// }
-// func isKnight(direction Direction) bool {
-// 	return direction >= Knight1
-// }
-
-type Check = int8
+type Check = uint8
 
 const (
 	NoCheck Check = iota
@@ -250,6 +287,7 @@ func (state *CheckState) String() string {
 	return fmt.Sprintf("check: %s, position %s",
 		CheckToString(state.Check), state.From.String())
 }
+
 func (state *CheckState) InCheck(colour Colour) bool {
 	if colour == White {
 		return debug || state.Check == NoCheck || state.Check == BlackCheck
@@ -257,6 +295,7 @@ func (state *CheckState) InCheck(colour Colour) bool {
 		return debug || state.Check == NoCheck || state.Check == WhiteCheck
 	}
 }
+
 func (state *CheckState) Promote(colour Colour) error {
 	// TODO
 	if state.Check == NoCheck {
@@ -338,7 +377,7 @@ func (board *BoardState) SetSquare(pos Position, piece Piece) {
 	board.State[positionToIndex(pos)] = piece
 }
 
-func (board *BoardState) Move(start Position, end Position) error {
+func (board *BoardState) Move(start, end Position) error {
 	if start == end {
 		return errors.New("positions are same")
 	}
@@ -348,8 +387,26 @@ func (board *BoardState) Move(start Position, end Position) error {
 
 	board.SetSquare(end, board.GetSquare(start))
 	board.SetSquare(start, Clear)
+	board.ResetPieceStates()
 
 	return nil
+}
+
+func (board *BoardState) MoveStr(start, end string) error {
+	startPos, err := StringToPosition(start)
+	if err != nil {
+		return err
+	}
+	endPos, err := StringToPosition(end)
+	if err != nil {
+		return err
+	}
+	return board.Move(startPos, endPos)
+}
+
+type Move struct {
+	From Position
+	To   Position
 }
 
 // check stuff
@@ -357,11 +414,11 @@ func (board *BoardState) Move(start Position, end Position) error {
 func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position) {
 	for i, piece := range board.State {
 		if piece == WKing {
-			newKing := IndexToPosition(int8(i))
+			newKing := IndexToPosition(i)
 			wKing = &newKing
 		}
 		if piece == BKing {
-			newKing := IndexToPosition(int8(i))
+			newKing := IndexToPosition(i)
 			bKing = &newKing
 		}
 	}
@@ -516,6 +573,12 @@ func (board *BoardState) CheckOtherPieceChecks(
 	return check, nil
 }
 
+func (board *BoardState) ResetPieceStates() {
+	for index, piece := range board.State {
+		board.State[index] = piece.Reset()
+	}
+}
+
 func (board *BoardState) UpdateCheckState(findErr bool) error {
 	wKing, bKing := board.GetKingPositions()
 
@@ -533,25 +596,6 @@ func (board *BoardState) UpdateCheckState(findErr bool) error {
 	board.Check = *check
 
 	return nil
-}
-
-func StringToPosition(str string) (Position, error) {
-	if len(str) != 2 {
-		return Position{}, errors.New("string must be of length 2")
-	}
-
-	file := str[0]
-	rank := str[1]
-	if file < 'A' || file > 'H' {
-		return Position{}, errors.New("rank out of bounds")
-	}
-	if rank < '1' || rank > '8' {
-		return Position{}, errors.New("rank out of bounds")
-	}
-
-	parsedFile := int8(file - 'A')
-	parsedRank := int8(rank - '1')
-	return Position{X: parsedFile, Y: parsedRank}, nil
 }
 
 // fen stuff
@@ -573,8 +617,7 @@ var pieceToFenArr = [...]byte{
 }
 
 func (piece Piece) FenByte() byte {
-	index := Piece(0)
-	index += (NotClear & piece) * (1 + piece.PieceType() + Piece(6*piece.Colour()))
+	index := (NotClear & piece) * (1 + piece.PieceType() + Piece(6*piece.Colour()))
 	return pieceToFenArr[index]
 }
 func (piece Piece) FenString() string {
@@ -749,4 +792,8 @@ func ParseFen(fen string) (*BoardState, error) {
 	}
 
 	return &BoardState{State: state, Check: CheckState{}, MoveCounter: uint16(moveCounter)}, nil
+}
+
+func (board *BoardState) GetLegalMoves() []Move {
+	return nil
 }
