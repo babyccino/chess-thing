@@ -22,7 +22,7 @@ func Test_fen(test *testing.T) {
 		boardState := board.NewBoard()
 		assertStrEquality(
 			test,
-			"KRBPP3/RQNP4/NBP5/PP5p/P5pp/5pbn/4pnqr/3ppbrk w 0",
+			"krbpp3/rqnp4/nbp5/pp5P/p5PP/5PBN/4PNQR/3PPBRK w 0",
 			boardState.Fen(),
 		)
 
@@ -30,7 +30,7 @@ func Test_fen(test *testing.T) {
 		assertSuccess(test, err)
 		assertStrEquality(
 			test,
-			"KRBPP3/RQNP4/NBP5/PP5p/6pp/P4pbn/4pnqr/3ppbrk w 0",
+			"krbpp3/rqnp4/nbp5/pp5P/6PP/p4PBN/4PNQR/3PPBRK w 0",
 			boardState.Fen(),
 		)
 	})
