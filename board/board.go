@@ -330,14 +330,14 @@ type BoardState struct {
 
 func NewBoard() *BoardState {
 	state := [64]Piece{
-		BKing, BRook, BBishop, BPawn, BPawn, Clear, Clear, Clear,
-		BRook, BQueen, BKnight, BPawn, Clear, Clear, Clear, Clear,
-		BKnight, BBishop, BPawn, Clear, Clear, Clear, Clear, Clear,
-		BPawn, BPawn, Clear, Clear, Clear, Clear, Clear, WPawn,
-		BPawn, Clear, Clear, Clear, Clear, Clear, WPawn, WPawn,
-		Clear, Clear, Clear, Clear, Clear, WPawn, WBishop, WKnight,
-		Clear, Clear, Clear, Clear, WPawn, WKnight, WQueen, WRook,
-		Clear, Clear, Clear, WPawn, WPawn, WBishop, WRook, WKing,
+		WKing, WRook, WBishop, WPawn, WPawn, Clear, Clear, Clear,
+		WRook, WQueen, WKnight, WPawn, Clear, Clear, Clear, Clear,
+		WKnight, WBishop, WPawn, Clear, Clear, Clear, Clear, Clear,
+		WPawn, WPawn, Clear, Clear, Clear, Clear, Clear, BPawn,
+		WPawn, Clear, Clear, Clear, Clear, Clear, BPawn, BPawn,
+		Clear, Clear, Clear, Clear, Clear, BPawn, BBishop, BKnight,
+		Clear, Clear, Clear, Clear, BPawn, BKnight, BQueen, BRook,
+		Clear, Clear, Clear, BPawn, BPawn, BBishop, BRook, BKing,
 	}
 	return &BoardState{
 		State:              state,
