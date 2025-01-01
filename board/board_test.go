@@ -12,19 +12,27 @@ func Test_fen(test *testing.T) {
 	test.Run("test fen creation", func(test *testing.T) {
 		test.Parallel()
 
-		boardState := board.NewBoard()
-		assertStrEquality(test, "KRBPP3/RQNP4/NBP5/PP5p/P5pp/5pbn/4pnqr/3ppbrk w 0", boardState.Fen())
+		if board.WKing.FenString() != "k" {
+			test.Fatalf("white king does not generate correct 'k' instead %s", board.WKing.FenString())
+		}
+		if board.BKing.FenString() != "K" {
+			test.Fatalf("black king does not generate correct 'K' instead %s", board.WKing.FenString())
+		}
 
-		move1, err := board.StringToPosition("A5")
-		if err != nil {
-			test.Fatal(err)
-		}
-		move2, err := board.StringToPosition("A6")
-		if err != nil {
-			test.Fatal(err)
-		}
-		boardState.Move(move1, move2)
-		assertStrEquality(test, "KRBPP3/RQNP4/NBP5/PP5p/6pp/P4pbn/4pnqr/3ppbrk w 0", boardState.Fen())
+		boardState := board.NewBoard()
+		assertStrEquality(
+			test,
+			"KRBPP3/RQNP4/NBP5/PP5p/P5pp/5pbn/4pnqr/3ppbrk w 0",
+			boardState.Fen(),
+		)
+
+		err := boardState.MoveStr("A5", "A6")
+		assertSuccess(test, err)
+		assertStrEquality(
+			test,
+			"KRBPP3/RQNP4/NBP5/PP5p/6pp/P4pbn/4pnqr/3ppbrk w 0",
+			boardState.Fen(),
+		)
 	})
 
 	test.Run("test test functions", func(test *testing.T) {
@@ -90,7 +98,7 @@ func Test_check(test *testing.T) {
 			check := &boardState.Check
 			assertCheckEquality(test, endingCheck, check)
 
-			for i := range int8(64) {
+			for i := range 64 {
 				pos := board.IndexToPosition(i)
 				expectedPin, found := pinnedPieces[pos]
 				piece := boardState.GetSquare(pos)
@@ -168,6 +176,74 @@ func Test_check(test *testing.T) {
 	})
 }
 
+func Test_legal_moves(test *testing.T) {
+	test.Parallel()
+
+	test.Run("test legal moves", func(test *testing.T) {
+		test.Parallel()
+
+		type DebugMove struct {
+			from string
+			to   string
+		}
+		helper := func(
+			fen string,
+			expectedMoves []DebugMove,
+		) {
+			parsedExpectedMoves := make([]board.Move, 0, len(expectedMoves))
+			for _, move := range expectedMoves {
+				from, err := board.StringToPosition(move.from)
+				assertSuccess(test, err)
+				to, err := board.StringToPosition(move.to)
+				assertSuccess(test, err)
+				parsedMove := board.Move{from, to}
+				parsedExpectedMoves = append(parsedExpectedMoves, parsedMove)
+			}
+
+			expectedMoveMap := map[board.Move]struct{}{}
+			for _, expectedMove := range parsedExpectedMoves {
+				expectedMoveMap[expectedMove] = struct{}{}
+			}
+			if len(parsedExpectedMoves) != len(expectedMoveMap) {
+				test.Fatalf("expectedMoves contains duplicates: %v", parsedExpectedMoves)
+			}
+
+			boardState, err := board.ParseFen(fen)
+			assertSuccess(test, err)
+
+			err = boardState.UpdateCheckState(false)
+			assertSuccess(test, err)
+
+			moves := boardState.GetLegalMoves()
+
+			moveMap := map[board.Move]struct{}{}
+			for _, move := range moves {
+				moveMap[move] = struct{}{}
+			}
+			if len(moves) != len(moveMap) {
+				test.Fatalf("moves contains duplicates: %v", moves)
+			}
+
+			if len(expectedMoveMap) != len(moveMap) {
+				test.Fatalf(
+					"expected moves and received moves are not equal\nepxected: %v\ncalculated: %v",
+					parsedExpectedMoves, moves)
+			}
+
+			for move := range expectedMoveMap {
+				_, found := moveMap[move]
+				if !found {
+					test.Fatalf("%v was expected to be a legal move but was not", move)
+				}
+			}
+		}
+
+		helper("K7/8/8/8/8/8/8/7k w 0",
+			[]DebugMove{{"H8", "H7"}, {"H8", "G7"}, {"H8", "G8"}},
+		)
+	})
+}
+
 func assertEq(test *testing.T, expected, received fmt.Stringer) {
 	test.Helper()
 	if expected != received {
@@ -241,5 +317,24 @@ func assertCheckEquality(test *testing.T, expected, received *board.CheckState) 
 	if *expected != *received {
 		test.Fatalf("expected: %s\nreceived: %s",
 			expected.String(), received.String())
+	}
+}
+
+type Number interface {
+	int | int32 | int64 | int16 | int8
+}
+
+func assertNumEq[T Number](test *testing.T, expected, received T) {
+	test.Helper()
+	if expected != received {
+		test.Fatalf("expected %d\nreceived: %d",
+			expected, received)
+	}
+}
+func assertBoolEq(test *testing.T, expected, received bool) {
+	test.Helper()
+	if expected != received {
+		test.Fatalf("expected %t\nreceived: %t",
+			expected, received)
 	}
 }
