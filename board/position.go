@@ -18,6 +18,10 @@ func (pos *Position) String() string {
 func (pos *Position) Print() {
 	fmt.Print(pos.String() + "\n")
 }
+func (pos *Position) CoordsString() string {
+	bytes := []byte{byte('A' + pos.X), byte('1' + pos.Y)}
+	return string(bytes)
+}
 func (pos *Position) Add(other Position) Position {
 	return Position{pos.X + other.X, pos.Y + other.Y}
 }

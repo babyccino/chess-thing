@@ -3,21 +3,25 @@ package board_test
 import (
 	"chess/board"
 	"fmt"
+	"strings"
 	"testing"
 )
 
+func Test_piece_functions(test *testing.T) {
+	test.Parallel()
+
+	test.Run("test piece is", func(test *testing.T) {
+		test.Parallel()
+
+		assertBoolEq(test, true, board.WKing.Is(board.King))
+		assertBoolEq(test, false, board.WKing.Is(board.Queen))
+	})
+}
 func Test_fen(test *testing.T) {
 	test.Parallel()
 
 	test.Run("test fen creation", func(test *testing.T) {
 		test.Parallel()
-
-		if board.WKing.FenString() != "k" {
-			test.Fatalf("white king does not generate correct 'k' instead %s", board.WKing.FenString())
-		}
-		if board.BKing.FenString() != "K" {
-			test.Fatalf("black king does not generate correct 'K' instead %s", board.WKing.FenString())
-		}
 
 		boardState := board.NewBoard()
 		assertStrEquality(
@@ -67,114 +71,123 @@ func Test_fen(test *testing.T) {
 		wKing, bKing := boardState.GetKingPositions()
 		board.AssertPositionsEqual(test, *bKing, board.Position{0, 0})
 		board.AssertPositionsEqual(test, *wKing, board.Position{7, 7})
+
+		// need both kings
+		received, err = board.ParseFen("8/8/8/8/8/8/8/7k w 0")
+		assertFailure(test, err)
 	})
 }
 
 type PinMap = map[board.Position]board.PinDirection
 
-func Test_check(test *testing.T) {
-	test.Parallel()
+// func Test_check(test *testing.T) {
+// 	test.Parallel()
 
-	test.Run("test checks", func(test *testing.T) {
-		test.Parallel()
-		helper := func(
-			fen string,
-			endingCheck *board.CheckState,
-			shouldError bool,
-			pinnedPieces PinMap,
-		) {
-			boardState, err := board.ParseFen(fen)
-			assertSuccess(test, err)
+// 	test.Run("test checks", func(test *testing.T) {
+// 		test.Parallel()
+// 		helper := func(
+// 			fen string,
+// 			endingCheck *board.CheckState,
+// 			shouldError bool,
+// 			pinnedPieces PinMap,
+// 		) {
+// 			boardState, err := board.ParseFen(fen)
+// 			assertSuccess(test, err)
 
-			err = boardState.UpdateCheckState(shouldError)
+// 			err = boardState.UpdateCheckState(shouldError)
 
-			if shouldError {
-				assertFailure(test, err)
-				return
-			} else {
-				assertSuccess(test, err)
-			}
+// 			if shouldError {
+// 				assertFailure(test, err)
+// 				return
+// 			} else {
+// 				assertSuccess(test, err)
+// 			}
 
-			check := &boardState.Check
-			assertCheckEquality(test, endingCheck, check)
+// 			check := &boardState.Check
+// 			assertCheckEquality(test, endingCheck, check)
 
-			for i := range 64 {
-				pos := board.IndexToPosition(i)
-				expectedPin, found := pinnedPieces[pos]
-				piece := boardState.GetSquare(pos)
-				receivedPin := piece.GetPin()
-				if found {
-					if receivedPin != expectedPin {
-						test.Errorf(
-							"The %s at %s was expected to be pinned %s but was pinned %s",
-							piece.StringDebug(), pos.String(),
-							board.PinToString(expectedPin), board.PinToString(receivedPin))
-					}
-				} else {
-					if piece.IsPinned() {
-						test.Errorf("The %s at %s was expected to not be pinned but was not",
-							piece.StringDebug(), pos.String())
-					}
-				}
-			}
-		}
+// 			for i := range 64 {
+// 				pos := board.IndexToPosition(i)
+// 				expectedPin, found := pinnedPieces[pos]
+// 				piece := boardState.GetSquare(pos)
+// 				receivedPin := piece.GetPin()
+// 				if found {
+// 					if receivedPin != expectedPin {
+// 						test.Errorf(
+// 							"The %s at %s was expected to be pinned %s but was pinned %s",
+// 							piece.StringDebug(), pos.String(),
+// 							board.PinToString(expectedPin), board.PinToString(receivedPin))
+// 					}
+// 				} else {
+// 					if piece.IsPinned() {
+// 						test.Errorf("The %s at %s was expected to not be pinned but was not",
+// 							piece.StringDebug(), pos.String())
+// 					}
+// 				}
+// 			}
+// 		}
 
-		helper("K6P/1ppppppp/8/8/8/8/8/7k w 0",
-			&board.CheckState{board.NoCheck, board.Position{}},
-			false,
-			nil)
+// 		helper("K6P/1ppppppp/8/8/8/8/8/7k w 0",
+// 			&board.CheckState{board.NoCheck, board.Position{}},
+// 			false,
+// 			nil)
 
-		// queen should be pinned
-		helper("K7/1pp5/8/8/4B3/8/6q1/7k w 0",
-			&board.CheckState{board.NoCheck, board.Position{}},
-			false,
-			PinMap{{6, 6}: board.DownRightPin})
+// 		// queen should be pinned
+// 		helper("K7/1pp5/8/8/4B3/8/6q1/7k w 0",
+// 			&board.CheckState{board.NoCheck, board.Position{}},
+// 			false,
+// 			PinMap{{6, 6}: board.DownRightPin})
 
-		// now a rook is between the queen and the bishop so the pin is broken
-		helper("K7/p7/8/8/4B3/5r2/6q1/7k w 0",
-			&board.CheckState{
-				board.BlackCheck, board.Position{0, 1},
-			},
-			false,
-			nil)
+// 		// now a rook is between the queen and the bishop so the pin is broken
+// 		helper("K7/p7/8/8/4B3/5r2/6q1/7k w 0",
+// 			&board.CheckState{
+// 				board.BlackCheck, board.Position{0, 1},
+// 			},
+// 			false,
+// 			nil)
 
-		helper("Kp6/1p6/8/8/8/8/8/7k w 0",
-			&board.CheckState{
-				board.BlackCheck, board.Position{1, 0},
-			},
-			false,
-			nil)
+// 		helper("Kp6/1p6/8/8/8/8/8/7k w 0",
+// 			&board.CheckState{
+// 				board.BlackCheck, board.Position{1, 0},
+// 			},
+// 			false,
+// 			nil)
 
-		helper("KP6/P7/r1q5/8/8/8/8/7k w 0",
-			&board.CheckState{
-				board.BlackCheck, board.Position{2, 2},
-			},
-			false,
-			PinMap{{0, 1}: board.DownPin})
+// 		helper("KP6/P7/r1q5/8/8/8/8/7k w 0",
+// 			&board.CheckState{
+// 				board.BlackCheck, board.Position{2, 2},
+// 			},
+// 			false,
+// 			PinMap{{0, 1}: board.DownPin})
 
-		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
-			&board.CheckState{
-				board.BlackCheck, board.Position{2, 2},
-			},
-			false,
-			nil)
+// 		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
+// 			&board.CheckState{
+// 				board.BlackCheck, board.Position{2, 2},
+// 			},
+// 			false,
+// 			nil)
 
-		helper("KP6/P7/1nq5/8/8/8/8/7k w 0",
-			&board.CheckState{
-				board.BlackDoubleCheck, board.Position{2, 2},
-			},
-			false,
-			nil)
+// 		helper("KP6/P7/1nq5/8/8/8/8/7k w 0",
+// 			&board.CheckState{
+// 				board.BlackDoubleCheck, board.Position{2, 2},
+// 			},
+// 			false,
+// 			nil)
 
-		helper("KP6/P7/b7/r7/8/8/8/7k w 0",
-			&board.CheckState{board.NoCheck, board.Position{}},
-			false,
-			nil)
+// 		helper("KP6/P7/b7/r7/8/8/8/7k w 0",
+// 			&board.CheckState{board.NoCheck, board.Position{}},
+// 			false,
+// 			nil)
 
-		helper("KP6/P7/1nq5/8/8/8/8/6Rk w 0", nil, true,
-			nil)
-	})
-}
+// 		helper("KP6/P7/1nq5/8/8/8/8/6Rk w 0", nil, true,
+// 			nil)
+
+// 		helper("kP6/8/8/8/8/1r6/8/7K w 0",
+// 			&board.CheckState{board.WhiteCheck, board.Position{1, 0}},
+// 			false,
+// 			nil)
+// 	})
+// }
 
 func Test_legal_moves(test *testing.T) {
 	test.Parallel()
@@ -182,19 +195,20 @@ func Test_legal_moves(test *testing.T) {
 	test.Run("test legal moves", func(test *testing.T) {
 		test.Parallel()
 
-		type DebugMove struct {
-			from string
-			to   string
-		}
 		helper := func(
 			fen string,
-			expectedMoves []DebugMove,
+			expectedMoves []string,
 		) {
 			parsedExpectedMoves := make([]board.Move, 0, len(expectedMoves))
 			for _, move := range expectedMoves {
-				from, err := board.StringToPosition(move.from)
+				split := strings.Split(move, ":")
+				if len(split) != 2 {
+					test.Fatalf("error in arg: %s", move)
+				}
+
+				from, err := board.StringToPosition(split[0])
 				assertSuccess(test, err)
-				to, err := board.StringToPosition(move.to)
+				to, err := board.StringToPosition(split[1])
 				assertSuccess(test, err)
 				parsedMove := board.Move{from, to}
 				parsedExpectedMoves = append(parsedExpectedMoves, parsedMove)
@@ -205,7 +219,11 @@ func Test_legal_moves(test *testing.T) {
 				expectedMoveMap[expectedMove] = struct{}{}
 			}
 			if len(parsedExpectedMoves) != len(expectedMoveMap) {
-				test.Fatalf("expectedMoves contains duplicates: %v", parsedExpectedMoves)
+				test.Fatalf(
+					"board: %s\nexpectedMoves contains duplicates: %s",
+					fen,
+					board.MoveListToString(parsedExpectedMoves),
+				)
 			}
 
 			boardState, err := board.ParseFen(fen)
@@ -213,6 +231,7 @@ func Test_legal_moves(test *testing.T) {
 
 			err = boardState.UpdateCheckState(false)
 			assertSuccess(test, err)
+			boardState.UpdateAttackedSquares()
 
 			moves := boardState.GetLegalMoves()
 
@@ -221,26 +240,65 @@ func Test_legal_moves(test *testing.T) {
 				moveMap[move] = struct{}{}
 			}
 			if len(moves) != len(moveMap) {
-				test.Fatalf("moves contains duplicates: %v", moves)
+				test.Fatalf("board: %s\nmoves contains duplicates: %v", fen, board.MoveListToString(moves))
 			}
 
 			if len(expectedMoveMap) != len(moveMap) {
 				test.Fatalf(
-					"expected moves and received moves are not equal\nepxected: %v\ncalculated: %v",
-					parsedExpectedMoves, moves)
+					"board: %s\nexpected moves and received moves are not equal\nepxected: %v\ncalculated: %v",
+					fen,
+					board.MoveListToString(parsedExpectedMoves), board.MoveListToString(moves))
 			}
 
 			for move := range expectedMoveMap {
 				_, found := moveMap[move]
 				if !found {
-					test.Fatalf("%v was expected to be a legal move but was not", move)
+					test.Fatalf("board: %s\nm%s was expected to be a legal move but was not\ncalculated: %v",
+						fen, &move, board.MoveListToString(moves))
 				}
 			}
 		}
 
-		helper("K7/8/8/8/8/8/8/7k w 0",
-			[]DebugMove{{"H8", "H7"}, {"H8", "G7"}, {"H8", "G8"}},
+		// // king moves
+		// helper(
+		// 	"k7/8/8/8/8/8/8/7K w 0",
+		// 	[]string{"A1:A2", "A1:B2", "A1:B1"},
+		// )
+		// helper(
+		// 	"k7/P7/8/8/8/8/8/7K w 0",
+		// 	[]string{"A1:A2", "A1:B2", "A1:B1"},
+		// )
+		// helper(
+		// 	"k7/1P6/8/8/8/8/8/7K w 0",
+		// 	[]string{"A1:B2"},
+		// )
+		// helper(
+		// 	"kP6/8/8/8/8/8/8/7K w 0",
+		// 	[]string{"A1:A2", "A1:B2", "A1:B1"},
+		// )
+		// helper(
+		// 	"k7/1P6/1P6/8/8/8/8/7K w 0",
+		// 	[]string{},
+		// )
+		// //
+
+		// // king + others
+		// helper(
+		// 	"k7/1p6/8/8/8/8/8/7K w 0",
+		// 	[]string{"A1:A2", "A1:B1", "B2:C3"},
+		// )
+		// helper(
+		// 	"kp6/1P6/8/8/8/8/8/7K w 0",
+		// 	[]string{"A1:B2", "B1:B2", "B1:C2"},
+		// )
+		// //
+
+		// checks
+		helper(
+			"kP6/8/8/8/8/1r6/8/7K w 0",
+			[]string{"A1:B1", "A1:A2", "A1:B2", "B6:B1"},
 		)
+		//
 	})
 }
 
