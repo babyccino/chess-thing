@@ -684,7 +684,7 @@ func AmBeingAttacked(
 	king *Position, piece Piece, colour Colour,
 	piecePosition Position, diagonal bool,
 ) bool {
-	if piece == Clear {
+	if piece.IsClear() {
 		return false
 	}
 	if (colour == White) == piece.IsWhite() {
@@ -763,7 +763,7 @@ func (board *BoardState) otherPieceChecksImpl(
 
 	piece, piecePosition := board.FindInDirection(vec, king)
 
-	if piece == Clear {
+	if piece.IsClear() {
 		return check, nil
 	}
 
@@ -844,10 +844,10 @@ func (board *BoardState) UpdateCheckState(findErr bool) error {
 
 func (board *BoardState) Move(start, end Position) error {
 	if start == end {
-		errors.New("positions are same")
+		return errors.New("positions are same")
 	}
 	if start.X >= 8 || end.Y >= 8 {
-		errors.New("move out of bounds")
+		return errors.New("move out of bounds")
 	}
 
 	board.SetSquare(end, board.GetSquare(start))
