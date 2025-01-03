@@ -80,114 +80,114 @@ func Test_fen(test *testing.T) {
 
 type PinMap = map[board.Position]board.PinDirection
 
-// func Test_check(test *testing.T) {
-// 	test.Parallel()
+func Test_check(test *testing.T) {
+	test.Parallel()
 
-// 	test.Run("test checks", func(test *testing.T) {
-// 		test.Parallel()
-// 		helper := func(
-// 			fen string,
-// 			endingCheck *board.CheckState,
-// 			shouldError bool,
-// 			pinnedPieces PinMap,
-// 		) {
-// 			boardState, err := board.ParseFen(fen)
-// 			assertSuccess(test, err)
+	test.Run("test checks", func(test *testing.T) {
+		test.Parallel()
+		helper := func(
+			fen string,
+			endingCheck *board.CheckState,
+			shouldError bool,
+			pinnedPieces PinMap,
+		) {
+			boardState, err := board.ParseFen(fen)
+			assertSuccess(test, err)
 
-// 			err = boardState.UpdateCheckState(shouldError)
+			err = boardState.UpdateCheckState(shouldError)
 
-// 			if shouldError {
-// 				assertFailure(test, err)
-// 				return
-// 			} else {
-// 				assertSuccess(test, err)
-// 			}
+			if shouldError {
+				assertFailure(test, err)
+				return
+			} else {
+				assertSuccess(test, err)
+			}
 
-// 			check := &boardState.Check
-// 			assertCheckEquality(test, endingCheck, check)
+			check := &boardState.Check
+			assertCheckEquality(test, endingCheck, check)
 
-// 			for i := range 64 {
-// 				pos := board.IndexToPosition(i)
-// 				expectedPin, found := pinnedPieces[pos]
-// 				piece := boardState.GetSquare(pos)
-// 				receivedPin := piece.GetPin()
-// 				if found {
-// 					if receivedPin != expectedPin {
-// 						test.Errorf(
-// 							"The %s at %s was expected to be pinned %s but was pinned %s",
-// 							piece.StringDebug(), pos.String(),
-// 							board.PinToString(expectedPin), board.PinToString(receivedPin))
-// 					}
-// 				} else {
-// 					if piece.IsPinned() {
-// 						test.Errorf("The %s at %s was expected to not be pinned but was not",
-// 							piece.StringDebug(), pos.String())
-// 					}
-// 				}
-// 			}
-// 		}
+			for i := range 64 {
+				pos := board.IndexToPosition(i)
+				expectedPin, found := pinnedPieces[pos]
+				piece := boardState.GetSquare(pos)
+				receivedPin := piece.GetPin()
+				if found {
+					if receivedPin != expectedPin {
+						test.Errorf(
+							"The %s at %s was expected to be pinned %s but was pinned %s",
+							piece.StringDebug(), pos.String(),
+							board.PinToString(expectedPin), board.PinToString(receivedPin))
+					}
+				} else {
+					if piece.IsPinned() {
+						test.Errorf("The %s at %s was expected to not be pinned but was not",
+							piece.StringDebug(), pos.String())
+					}
+				}
+			}
+		}
 
-// 		helper("K6P/1ppppppp/8/8/8/8/8/7k w 0",
-// 			&board.CheckState{board.NoCheck, board.Position{}},
-// 			false,
-// 			nil)
+		helper("k6p/1PPPPPPP/8/8/8/8/8/7K w 0",
+			&board.CheckState{board.NoCheck, board.Position{}},
+			false,
+			nil)
 
-// 		// queen should be pinned
-// 		helper("K7/1pp5/8/8/4B3/8/6q1/7k w 0",
-// 			&board.CheckState{board.NoCheck, board.Position{}},
-// 			false,
-// 			PinMap{{6, 6}: board.DownRightPin})
+		// queen should be pinned
+		helper("k7/1PP5/8/8/4b3/8/6Q1/7K w 0",
+			&board.CheckState{board.NoCheck, board.Position{}},
+			false,
+			PinMap{{6, 6}: board.DownRightPin})
 
-// 		// now a rook is between the queen and the bishop so the pin is broken
-// 		helper("K7/p7/8/8/4B3/5r2/6q1/7k w 0",
-// 			&board.CheckState{
-// 				board.BlackCheck, board.Position{0, 1},
-// 			},
-// 			false,
-// 			nil)
+		// now a rook is between the queen and the bishop so the pin is broken
+		helper("k7/P7/8/8/4b3/5R2/6Q1/7K w 0",
+			&board.CheckState{
+				board.WhiteCheck, board.Position{0, 1},
+			},
+			false,
+			nil)
 
-// 		helper("Kp6/1p6/8/8/8/8/8/7k w 0",
-// 			&board.CheckState{
-// 				board.BlackCheck, board.Position{1, 0},
-// 			},
-// 			false,
-// 			nil)
+		helper("kP6/1P6/8/8/8/8/8/7K w 0",
+			&board.CheckState{
+				board.WhiteCheck, board.Position{1, 0},
+			},
+			false,
+			nil)
 
-// 		helper("KP6/P7/r1q5/8/8/8/8/7k w 0",
-// 			&board.CheckState{
-// 				board.BlackCheck, board.Position{2, 2},
-// 			},
-// 			false,
-// 			PinMap{{0, 1}: board.DownPin})
+		helper("kp6/p7/R1Q5/8/8/8/8/7K w 0",
+			&board.CheckState{
+				board.WhiteCheck, board.Position{2, 2},
+			},
+			false,
+			PinMap{{0, 1}: board.DownPin})
 
-// 		helper("KP6/P7/2q5/8/8/8/8/7k w 0",
-// 			&board.CheckState{
-// 				board.BlackCheck, board.Position{2, 2},
-// 			},
-// 			false,
-// 			nil)
+		helper("kp6/p7/2Q5/8/8/8/8/7K w 0",
+			&board.CheckState{
+				board.WhiteCheck, board.Position{2, 2},
+			},
+			false,
+			nil)
 
-// 		helper("KP6/P7/1nq5/8/8/8/8/7k w 0",
-// 			&board.CheckState{
-// 				board.BlackDoubleCheck, board.Position{2, 2},
-// 			},
-// 			false,
-// 			nil)
+		helper("kp6/p7/1NQ5/8/8/8/8/7K w 0",
+			&board.CheckState{
+				board.WhiteDoubleCheck, board.Position{2, 2},
+			},
+			false,
+			nil)
 
-// 		helper("KP6/P7/b7/r7/8/8/8/7k w 0",
-// 			&board.CheckState{board.NoCheck, board.Position{}},
-// 			false,
-// 			nil)
+		helper("kp6/p7/B7/R7/8/8/8/7K w 0",
+			&board.CheckState{board.NoCheck, board.Position{}},
+			false,
+			nil)
 
-// 		helper("KP6/P7/1nq5/8/8/8/8/6Rk w 0", nil, true,
-// 			nil)
+		helper("kp6/p7/1NQ5/8/8/8/8/6rK w 0", nil, true,
+			nil)
 
-// 		helper("kP6/8/8/8/8/1r6/8/7K w 0",
-// 			&board.CheckState{board.WhiteCheck, board.Position{1, 0}},
-// 			false,
-// 			nil)
-// 	})
-// }
+		helper("kP6/8/8/8/8/1r6/8/7K w 0",
+			&board.CheckState{board.WhiteCheck, board.Position{1, 0}},
+			false,
+			nil)
+	})
+}
 
 func Test_legal_moves(test *testing.T) {
 	test.Parallel()
@@ -259,39 +259,39 @@ func Test_legal_moves(test *testing.T) {
 			}
 		}
 
-		// // king moves
-		// helper(
-		// 	"k7/8/8/8/8/8/8/7K w 0",
-		// 	[]string{"A1:A2", "A1:B2", "A1:B1"},
-		// )
-		// helper(
-		// 	"k7/P7/8/8/8/8/8/7K w 0",
-		// 	[]string{"A1:A2", "A1:B2", "A1:B1"},
-		// )
-		// helper(
-		// 	"k7/1P6/8/8/8/8/8/7K w 0",
-		// 	[]string{"A1:B2"},
-		// )
-		// helper(
-		// 	"kP6/8/8/8/8/8/8/7K w 0",
-		// 	[]string{"A1:A2", "A1:B2", "A1:B1"},
-		// )
-		// helper(
-		// 	"k7/1P6/1P6/8/8/8/8/7K w 0",
-		// 	[]string{},
-		// )
-		// //
+		// king moves
+		helper(
+			"k7/8/8/8/8/8/8/7K w 0",
+			[]string{"A1:A2", "A1:B2", "A1:B1"},
+		)
+		helper(
+			"k7/P7/8/8/8/8/8/7K w 0",
+			[]string{"A1:A2", "A1:B2", "A1:B1"},
+		)
+		helper(
+			"k7/1P6/8/8/8/8/8/7K w 0",
+			[]string{"A1:B2"},
+		)
+		helper(
+			"kP6/8/8/8/8/8/8/7K w 0",
+			[]string{"A1:A2", "A1:B2", "A1:B1"},
+		)
+		helper(
+			"k7/1P6/1P6/8/8/8/8/7K w 0",
+			[]string{},
+		)
+		//
 
-		// // king + others
-		// helper(
-		// 	"k7/1p6/8/8/8/8/8/7K w 0",
-		// 	[]string{"A1:A2", "A1:B1", "B2:C3"},
-		// )
-		// helper(
-		// 	"kp6/1P6/8/8/8/8/8/7K w 0",
-		// 	[]string{"A1:B2", "B1:B2", "B1:C2"},
-		// )
-		// //
+		// king + others
+		helper(
+			"k7/1p6/8/8/8/8/8/7K w 0",
+			[]string{"A1:A2", "A1:B1", "B2:C3"},
+		)
+		helper(
+			"kp6/1P6/8/8/8/8/8/7K w 0",
+			[]string{"A1:B2", "B1:B2", "B1:C2"},
+		)
+		//
 
 		// checks
 		helper(
