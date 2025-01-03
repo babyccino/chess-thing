@@ -704,7 +704,9 @@ func AmBeingAttacked(
 }
 
 func CanPieceDoMove(
-	from, to Position, fromPiece Piece, toPiece Piece, diagonal bool,
+	from, to Position,
+	fromPiece, toPiece Piece,
+	diagonal bool,
 ) bool {
 	if fromPiece == Clear {
 		return false
@@ -713,10 +715,10 @@ func CanPieceDoMove(
 	diff := to.Diff(from)
 	toPieceColour := toPiece.Colour()
 
-	if fromPiece == BPawn {
-		return toPieceColour == White && (diff == DownVec || diff == RightVec)
-	} else if fromPiece == WPawn {
-		return toPieceColour == Black && (diff == UpVec || diff == LeftVec)
+	if fromPiece.IsPieceAndColour(BPawn) {
+		return toPieceColour == White && (diff == UpVec || diff == LeftVec)
+	} else if fromPiece.IsPieceAndColour(WPawn) {
+		return toPieceColour == Black && (diff == DownVec || diff == RightVec)
 	} else if diagonal {
 		return fromPiece.IsDiagonalAttacker()
 	} else {

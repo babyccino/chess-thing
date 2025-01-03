@@ -295,8 +295,13 @@ func Test_legal_moves(test *testing.T) {
 
 		// checks
 		helper(
-			"kP6/8/8/8/8/1r6/8/7K w 0",
-			[]string{"A1:B1", "A1:A2", "A1:B2", "B6:B1"},
+			"kP6/p7/8/8/8/1r6/8/7K w 0",
+			[]string{"A1:B1", "A1:B2", "B6:B1"},
+		)
+
+		helper(
+			"kP6/pp6/8/8/8/1r6/8/7K w 0",
+			[]string{"A1:B1"},
 		)
 		//
 	})
