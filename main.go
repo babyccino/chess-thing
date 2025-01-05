@@ -1,28 +1,67 @@
 package main
 
 import (
-	"chess/board"
-	"fmt"
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"time"
+
+	"chess/game_server"
 )
 
 func main() {
-	boardState := board.NewBoard()
-	println("before:\n")
-	boardState.Print()
+	log.SetFlags(0)
 
-	move1, _ := board.StringToPosition("A5")
-	move2, _ := board.StringToPosition("A6")
-	boardState.Move(move1, move2)
-	println("after:\n")
-	boardState.Print()
-	println(boardState.Fen())
-
-	fen := "KRBPP3/RQKP4/KBP5/PP5p/6pp/P4pbk/4pkqr/3ppbrk w 0"
-	fenBoard, err := board.ParseFen(fen)
-
+	err := run()
 	if err != nil {
-		panic(fmt.Errorf("%e", err))
+		log.Fatal(err)
+	}
+}
+
+func getAddr() string {
+	if len(os.Args) < 2 {
+		return "localhost:3000"
 	}
 
-	fenBoard.Print()
+	return os.Args[1]
+}
+
+// run initializes the chatServer and then
+// starts a http.Server for the passed in address.
+func run() error {
+
+	chatServer, err := game_server.NewGameServer(30 * time.Second)
+	if err != nil {
+		return err
+	}
+
+	addr := getAddr()
+	httpServer := &http.Server{
+		Handler:      chatServer,
+		ReadTimeout:  time.Second * 10,
+		WriteTimeout: time.Second * 10,
+		Addr:         addr,
+	}
+	httpServer.RegisterOnShutdown(chatServer.OnShutdown)
+	errc := make(chan error, 1)
+	go func() {
+		log.Printf("listening on http://%v", addr)
+		errc <- httpServer.ListenAndServe()
+	}()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt)
+	select {
+	case err := <-errc:
+		log.Printf("failed to serve: %v", err)
+	case sig := <-sigs:
+		log.Printf("terminating: %v", sig)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond*1)
+	defer cancel()
+
+	return httpServer.Shutdown(ctx)
 }
