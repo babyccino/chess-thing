@@ -1,0 +1,74 @@
+---
+import { ClientRouter } from "astro:transitions";
+import { Icon } from "astro-icon/components";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    <title>Chess baby</title>
+    <ClientRouter />
+  </head>
+  <body class="dark:bg-gray-900 dark:text-gray-50">
+    <script>
+      const button = document.getElementById("sidebarSeparator");
+      if (!button) throw new Error("no sidebar button");
+
+      let showSidebar = false;
+      function setShowSideBar() {
+        showSidebar = !showSidebar;
+      }
+      button.addEventListener("click", setShowSideBar);
+    </script>
+    <div class="relative flex flex-col sm:flex-row">
+      <header transition:persist="header">
+        <button
+          data:separator-sidebar
+          class="p-4 sm:hidden"
+          aria-controls="separator-sidebar"
+        >
+          <span class="sr-only">Open sidebar</span>
+          <Icon name="lucide:menu" />
+        </button>
+        <!-- todo sidebar handling -->
+        <!-- <div class="animate-fadeIn fixed inset-0 z-20 bg-black/40"></div> -->
+        <!-- todo sidebar handling -->
+        <nav
+          id="separator-sidebar"
+          class="bg-card fixed left-0 top-0 z-40 flex h-screen w-64 flex-col justify-between overflow-y-auto px-3 py-4 transition-transform sm:translate-x-0"
+          aria-label="Sidebar"
+        >
+          <ul class="font-medium">
+            <!-- TODO -->
+            <hr class="mt-5 border-none" />
+            <h4 class="text-muted-foreground mb-1 ml-3 text-xs font-light">
+              Legal
+            </h4>
+            <!-- TODO -->
+          </ul>
+        </nav>
+      </header>
+
+      <div class="hidden w-64 sm:block" transition:persist="header-blocker">
+      </div>
+
+      <main class="flex min-h-screen flex-1 flex-col items-center">
+        <slot />
+      </main>
+    </div>
+    <slot />
+  </body>
+</html>
+
+<style>
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+  }
+</style>
