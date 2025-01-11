@@ -14,9 +14,18 @@ importers:
       '@astrojs/tailwind':
         specifier: ^5.1.4
         version: 5.1.4(astro@5.1.2(@types/node@22.10.5)(jiti@1.21.7)(rollup@4.29.2)(typescript@5.7.2)(yaml@2.7.0))(tailwindcss@3.4.17)
+      '@iconify-json/fa6-regular':
+        specifier: ^1.2.3
+        version: 1.2.3
+      '@iconify-json/fa6-solid':
+        specifier: ^1.2.3
+        version: 1.2.3
       '@iconify-json/lucide':
         specifier: ^1.2.21
         version: 1.2.21
+      '@iconify/svelte':
+        specifier: ^4.2.0
+        version: 4.2.0(svelte@5.16.2)
       astro:
         specifier: ^5.1.2
         version: 5.1.2(@types/node@22.10.5)(jiti@1.21.7)(rollup@4.29.2)(typescript@5.7.2)(yaml@2.7.0)
@@ -388,8 +397,19 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@iconify-json/fa6-regular@1.2.3':
+    resolution: {integrity: sha512-NGV2j5mn4j49mpP7MABCljp1WPWKjwgfjN6NGwsmlFuQ7bdnz36nZB/5aRXLOcT36NXaBeCoT05G9aatdtMr3A==}
+
+  '@iconify-json/fa6-solid@1.2.3':
+    resolution: {integrity: sha512-C5o8YJF+ekrS4wRb/6/0SE2KjRyJlCg++IOVC/fineiRinITivsmzFRNW1MQX2xfDZ1T7bxeKxLN6lcaTG3jGA==}
+
   '@iconify-json/lucide@1.2.21':
     resolution: {integrity: sha512-Oi9bVtaDaiUg4DpmuFWO4bihwXvxFW47KYFUWEGRsqAWijnODTXIO24F2YNlz+k9WvdIr3RsOFiuNIoEzMPsRQ==}
+
+  '@iconify/svelte@4.2.0':
+    resolution: {integrity: sha512-fEl0T7SAPonK7xk6xUlRPDmFDZVDe2Z7ZstlqeDS/sS8ve2uyU+Qa8rTWbIqzZJlRvONkK5kVXiUf9nIc+6OOQ==}
+    peerDependencies:
+      svelte: '>4.0.0'
 
   '@iconify/tools@4.1.1':
     resolution: {integrity: sha512-Hybu/HGhv6T8nLQhiG9rKx+ekF7NNpPOEQAy7JRSKht3s3dcFSsPccYzk24Znc9MTxrR6Gak3cg6CPP5dyvS2Q==}
@@ -2537,9 +2557,22 @@ snapshots:
   '@esbuild/win32-x64@0.24.2':
     optional: true
 
+  '@iconify-json/fa6-regular@1.2.3':
+    dependencies:
+      '@iconify/types': 2.0.0
+
+  '@iconify-json/fa6-solid@1.2.3':
+    dependencies:
+      '@iconify/types': 2.0.0
+
   '@iconify-json/lucide@1.2.21':
     dependencies:
       '@iconify/types': 2.0.0
+
+  '@iconify/svelte@4.2.0(svelte@5.16.2)':
+    dependencies:
+      '@iconify/types': 2.0.0
+      svelte: 5.16.2
 
   '@iconify/tools@4.1.1':
     dependencies:
