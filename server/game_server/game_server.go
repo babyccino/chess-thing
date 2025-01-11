@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -14,19 +13,19 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 )
 
 type GameServer struct {
-	serveMux     http.ServeMux
+	ServeMux     *http.ServeMux
 	sessionsLock sync.Mutex
-	sessions     map[string]*Session
-	snsArn       string
-	maxEventAge  time.Duration
+	sessions     map[uuid.UUID]*Session
 }
 
 type Session struct {
-	players [2]*subscriber
-	viewers map[*subscriber]struct{}
+	subscriberLock sync.Mutex
+	players        [2]*subscriber
+	viewers        map[*subscriber]struct{}
 
 	game      *Game
 	id        string
@@ -38,77 +37,54 @@ type Game struct {
 }
 
 type subscriber struct {
-	gameId  string
-	events  chan string
-	Conn    *websocket.Conn
-	closed  bool
-	session *Session
+	gameId      string
+	events      chan string
+	doneChannel chan struct{}
+	Conn        *websocket.Conn
+	closed      bool
+	session     *Session
 }
 
-func NewGameServer(maxEventAge time.Duration) (*GameServer, error) {
+func NewGameServer() (*GameServer, error) {
 	server := &GameServer{
-		sessions:    make(map[string]*Session),
-		maxEventAge: maxEventAge,
+		ServeMux:     http.NewServeMux(),
+		sessions:     make(map[uuid.UUID]*Session),
+		sessionsLock: sync.Mutex{},
 	}
-	server.serveMux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+
+	server.ServeMux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
 		writer.Write([]byte("Go to wss:*/subscribe/gameId to connect"))
 	})
-	server.serveMux.HandleFunc("/subscribe/", server.SubscribeHandler)
-	server.serveMux.HandleFunc("/ping", server.PingHandler)
+	server.ServeMux.HandleFunc("/subscribe/", server.SubscribeHandler)
 
 	return server, nil
 }
 
 func newSession() *Session {
 	return &Session{
-		viewers:   make(map[*subscriber]struct{}),
-		createdAt: time.Now(),
-		updatedAt: time.Now(),
+		subscriberLock: sync.Mutex{},
+		viewers:        make(map[*subscriber]struct{}),
+		createdAt:      time.Now(),
+		updatedAt:      time.Now(),
 	}
+}
+
+func (server *GameServer) NewGame() uuid.UUID {
+	server.sessionsLock.Lock()
+	defer server.sessionsLock.Unlock()
+
+	session := newSession()
+	id := uuid.New()
+	server.sessions[id] = session
+	return id
 }
 
 func (server *GameServer) OnShutdown() {
+	// TODO
 }
 
 func (server *GameServer) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
-	server.serveMux.ServeHTTP(writer, req)
-}
-
-func (server *GameServer) PingHandler(writer http.ResponseWriter, req *http.Request) {
-	if req.Method != "POST" {
-		http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-	body := http.MaxBytesReader(writer, req.Body, 1024)
-	msg, err := io.ReadAll(body)
-	if err != nil {
-		http.Error(writer, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
-		return
-	}
-
-	println(string(msg))
-
-	var parsedBody struct {
-		Ping bool `json:"ping"`
-	}
-	err2 := json.Unmarshal(msg, &parsedBody)
-	fmt.Println(parsedBody.Ping)
-	if err2 != nil || !parsedBody.Ping {
-		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
-	}
-
-	writer.WriteHeader(http.StatusAccepted)
-	writer.Header().Add("Content-Type", "application/json")
-	pong := struct {
-		Pong bool `json:"pong"`
-	}{Pong: true}
-	response, err := json.Marshal(pong)
-	if err != nil {
-		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-	writer.Write(response)
+	server.ServeMux.ServeHTTP(writer, req)
 }
 
 func logError(ctx context.Context, err error) {
@@ -141,13 +117,13 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	}
 
 	// todo accept header
-	Conn, err := websocket.Accept(writer, req, nil)
+	Conn, err := websocket.Accept(writer, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
 		return err
 	}
 
 	// todo make session id and add to context
-	slog.InfoContext(ctx, "client subscribed to events from campaign", slog.String("id", id))
+	slog.InfoContext(ctx, "client subscribed to events from campaign", slog.String("id", id.String()))
 
 	server.sessionsLock.Lock()
 
@@ -158,13 +134,15 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	}
 
 	sub := &subscriber{
-		events:  make(chan string, 10),
-		Conn:    Conn,
-		session: session,
+		events:      make(chan string, 10),
+		doneChannel: make(chan struct{}, 1),
+		Conn:        Conn,
+		session:     session,
 	}
 
 	// just make any connection either one of the players
 	// todo: obvs this is just for testing
+	session.subscriberLock.Lock()
 	if session.players[0] != nil {
 		session.players[0] = sub
 	} else if session.players[1] != nil {
@@ -172,6 +150,8 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	} else {
 		session.viewers[sub] = struct{}{}
 	}
+	session.subscriberLock.Unlock()
+
 	server.sessionsLock.Unlock()
 
 	ctx = context.WithoutCancel(ctx)
@@ -187,6 +167,9 @@ func (session *Session) DeleteSubscriber(sub *subscriber) {
 		return
 	}
 
+	// TODO concurrent map writes probably because this is being called twice?
+	session.subscriberLock.Lock()
+	defer session.subscriberLock.Unlock()
 	delete(session.viewers, sub)
 }
 
@@ -207,13 +190,19 @@ func (session *Session) publishImpl(str string, sub *subscriber) {
 		sub.closeSlow()
 	}
 }
-func (session *Session) publish(str string) {
+func (session *Session) publish(sub *subscriber, str string) {
 	count := 0
-	for _, sub := range session.players {
-		session.publishImpl(str, sub)
+	for _, player := range session.players {
+		if player == sub {
+			continue
+		}
+		session.publishImpl(str, player)
 	}
-	for sub := range session.viewers {
-		session.publishImpl(str, sub)
+	for viewer := range session.viewers {
+		if viewer == sub {
+			continue
+		}
+		session.publishImpl(str, viewer)
 	}
 	fmt.Printf("[debug] %d subscribers were sent an event \n", count)
 }
@@ -226,6 +215,10 @@ func writeTimeout(ctx context.Context, timeout time.Duration, wsConn *websocket.
 }
 
 func (sub *subscriber) closeNow(ctx context.Context, err error) {
+	if sub.doneChannel != nil {
+		sub.doneChannel <- struct{}{}
+	}
+
 	slog.Info("closing")
 	if err != nil {
 		logError(ctx, err)
@@ -263,7 +256,7 @@ func (sub *subscriber) initRead(ctx context.Context) {
 			return
 		}
 
-		sub.session.publish(string(buf[:n]))
+		sub.session.publish(sub, string(buf[:n]))
 	}
 }
 
@@ -274,52 +267,50 @@ const (
 
 func (sub *subscriber) initWrite(ctx context.Context) {
 	pinger := time.NewTicker(pingInterval)
+	var err error
 	defer pinger.Stop()
+	defer sub.closeNow(ctx, err)
 
 	for {
 		select {
+		case <-sub.doneChannel:
+			return
 		case event := <-sub.events:
-			resp, err := json.Marshal(event)
-			if err != nil {
+			resp, err2 := json.Marshal(event)
+			if err2 != nil {
+				err = err2
 				return
 			}
 
-			err = writeTimeout(ctx, time.Second*5, sub.Conn, resp)
-			if err != nil {
-				sub.closeNow(ctx, err)
+			err2 = writeTimeout(ctx, time.Second*5, sub.Conn, resp)
+			if err2 != nil {
+				err = err2
 				return
 			}
 		case <-pinger.C:
 			slog.DebugContext(ctx, "pinging")
 			ctx, cancel := context.WithTimeout(ctx, pongWait)
-
-			err := sub.Conn.Ping(ctx)
-			if err != nil {
-				sub.closeNow(ctx, err)
+			defer cancel()
+			err2 := sub.Conn.Ping(ctx)
+			if err2 != nil {
+				err = err2
+				return
 			}
-
-			cancel()
 		case <-ctx.Done():
-			err := ctx.Err()
-			if err != nil {
-				logError(ctx, err)
-			} else {
-				slog.DebugContext(ctx, "context done")
-			}
-			sub.closeNow(ctx, err)
+			err = ctx.Err()
 			return
 		}
 	}
 }
 
-func getId(writer http.ResponseWriter, req *http.Request) (string, error) {
+func getId(writer http.ResponseWriter, req *http.Request) (uuid.UUID, error) {
 	id := strings.TrimPrefix(req.URL.Path, "/subscribe/")
 	if id == "" {
 		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return "", errors.New("no campaign id in request")
+		return uuid.UUID{}, errors.New("no campaign id in request")
 	}
 
-	return id, nil
+	return uuid.FromBytes([]byte(id))
 }
 
 func dumpMap(space string, m map[string]interface{}) {

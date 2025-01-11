@@ -35,8 +35,9 @@ i.e. cannot be taken by the black king
 
 check_square is a square a piece needs to move to _resolve_ a check
 this includes the square the checking piece is on,
-so the check is resolved by the piece being captures
-or a blocking square
+so the check is resolved by the piece being captured
+or moving to a blocking square. This also allows the king to capture
+the piece as that square is not necessarily also _attacked_
 */
 
 // clear (no piece on that square) = 0b0

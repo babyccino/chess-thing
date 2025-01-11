@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"chess/game_server"
+	"chess/matchmaking_server"
 )
 
 func main() {
@@ -32,19 +33,31 @@ func getAddr() string {
 // starts a http.Server for the passed in address.
 func run() error {
 
-	chatServer, err := game_server.NewGameServer(30 * time.Second)
+	gameServer, err := game_server.NewGameServer()
 	if err != nil {
 		return err
 	}
 
+	matchmakingServer, err := matchmaking_server.NewMatchmakingServer(gameServer)
+	if err != nil {
+		return err
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/game/", gameServer)
+	mux.Handle("/match/", matchmakingServer)
+
 	addr := getAddr()
 	httpServer := &http.Server{
-		Handler:      chatServer,
+		Handler:      mux,
 		ReadTimeout:  time.Second * 10,
 		WriteTimeout: time.Second * 10,
 		Addr:         addr,
 	}
-	httpServer.RegisterOnShutdown(chatServer.OnShutdown)
+
+	httpServer.RegisterOnShutdown(gameServer.OnShutdown)
+	httpServer.RegisterOnShutdown(matchmakingServer.OnShutdown)
+
 	errc := make(chan error, 1)
 	go func() {
 		log.Printf("listening on http://%v", addr)
@@ -60,7 +73,7 @@ func run() error {
 		log.Printf("terminating: %v", sig)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond*1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	return httpServer.Shutdown(ctx)
