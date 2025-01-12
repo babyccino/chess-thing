@@ -23,17 +23,22 @@ type GameServer struct {
 }
 
 type Session struct {
+	id   uuid.UUID
+	game *Game
+
 	subscriberLock sync.Mutex
 	players        [2]*subscriber
 	viewers        map[*subscriber]struct{}
 
-	game      *Game
-	id        string
 	updatedAt time.Time
 	createdAt time.Time
 }
 type Game struct {
 	board *board.BoardState
+}
+
+func newGame() *Game {
+	return &Game{board: board.NewBoard()}
 }
 
 type subscriber struct {
@@ -62,6 +67,8 @@ func NewGameServer() (*GameServer, error) {
 
 func newSession() *Session {
 	return &Session{
+		id:             uuid.New(),
+		game:           newGame(),
 		subscriberLock: sync.Mutex{},
 		viewers:        make(map[*subscriber]struct{}),
 		createdAt:      time.Now(),
@@ -69,14 +76,13 @@ func newSession() *Session {
 	}
 }
 
-func (server *GameServer) NewGame() uuid.UUID {
+func (server *GameServer) NewSession() uuid.UUID {
 	server.sessionsLock.Lock()
 	defer server.sessionsLock.Unlock()
 
 	session := newSession()
-	id := uuid.New()
-	server.sessions[id] = session
-	return id
+	server.sessions[session.id] = session
+	return session.id
 }
 
 func (server *GameServer) OnShutdown() {
@@ -110,10 +116,29 @@ func (server *GameServer) SubscribeHandler(writer http.ResponseWriter, req *http
 	}
 }
 
+type Event struct {
+	Type       string   `json:"type"`
+	Fen        string   `json:"fen,omitempty"`
+	Colour     string   `json:"colour,omitempty"`
+	LegalMoves []string `json:"legalMoves,omitempty"`
+	Move       string   `json:"move,omitempty"`
+}
+
 func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWriter, req *http.Request) error {
 	id, err := getId(writer, req)
 	if err != nil {
 		return err
+	}
+
+	server.sessionsLock.Lock()
+	session, found := server.sessions[id]
+	server.sessionsLock.Unlock()
+
+	if !found {
+		// todo accept header
+		writer.WriteHeader(404)
+		writer.Write([]byte(""))
+		return errors.New("not found")
 	}
 
 	// todo accept header
@@ -125,17 +150,9 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	// todo make session id and add to context
 	slog.InfoContext(ctx, "client subscribed to events from campaign", slog.String("id", id.String()))
 
-	server.sessionsLock.Lock()
-
-	session, found := server.sessions[id]
-	if !found {
-		session = newSession()
-		server.sessions[id] = session
-	}
-
 	sub := &subscriber{
 		events:      make(chan string, 10),
-		doneChannel: make(chan struct{}, 1),
+		doneChannel: make(chan struct{}),
 		Conn:        Conn,
 		session:     session,
 	}
@@ -152,9 +169,20 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	}
 	session.subscriberLock.Unlock()
 
-	server.sessionsLock.Unlock()
-
 	ctx = context.WithoutCancel(ctx)
+
+	resp, err := json.Marshal(event)
+	if err2 != nil {
+		err = err2
+		return
+	}
+
+	err2 = writeTimeout(ctx, time.Second*5, sub.Conn, resp)
+	if err2 != nil {
+		err = err2
+		return
+	}
+
 	go sub.initWrite(ctx)
 	go sub.initRead(ctx)
 
@@ -310,7 +338,7 @@ func getId(writer http.ResponseWriter, req *http.Request) (uuid.UUID, error) {
 		return uuid.UUID{}, errors.New("no campaign id in request")
 	}
 
-	return uuid.FromBytes([]byte(id))
+	return uuid.Parse(id)
 }
 
 func dumpMap(space string, m map[string]interface{}) {

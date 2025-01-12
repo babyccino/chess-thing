@@ -33,7 +33,7 @@ type player struct {
 	server      *MatchmakingServer
 }
 
-func NewPlayer(conn *websocket.Conn) *player {
+func newPlayer(conn *websocket.Conn, server *MatchmakingServer) *player {
 	return &player{
 		id:          uuid.New(),
 		elo:         0,
@@ -41,21 +41,21 @@ func NewPlayer(conn *websocket.Conn) *player {
 		Conn:        conn,
 		closed:      false,
 		doneChannel: make(chan struct{}),
+		server:      server,
 	}
 }
 
 func NewMatchmakingServer(gameServer *game_server.GameServer) (*MatchmakingServer, error) {
+	serveMux := http.NewServeMux()
 	server := &MatchmakingServer{
-		ServeMux:  http.NewServeMux(),
-		queue:     make([]*player, 0),
-		queueLock: sync.Mutex{},
+		ServeMux:   serveMux,
+		queue:      make([]*player, 0),
+		queueLock:  sync.Mutex{},
+		gameServer: gameServer,
 	}
 
-	server.ServeMux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
-		writer.Write([]byte("Go to wss:*/subscribe/gameId to connect"))
-	})
-	server.ServeMux.HandleFunc("/unranked/", server.UnrankedHandler)
-	server.ServeMux.HandleFunc("/unranked/subscribe/", server.UnrankedQueueHandler)
+	serveMux.HandleFunc("/unranked", server.UnrankedHandler)
+	serveMux.HandleFunc("/unranked/subscribe", server.UnrankedQueueHandler)
 
 	return server, nil
 }
@@ -87,7 +87,7 @@ func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req
 		server.queue = server.queue[1:]
 		server.queueLock.Unlock()
 
-		gameId := server.gameServer.NewGame()
+		gameId := server.gameServer.NewSession()
 
 		bytes, err := json.Marshal(QueueResponse{true, gameId.String()})
 		if err != nil {
@@ -95,6 +95,7 @@ func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req
 			server.queue = append(server.queue, player)
 			server.queueLock.Unlock()
 			writer.WriteHeader(500)
+			writer.Write([]byte("{\"ok\":true}"))
 			return
 		}
 
@@ -105,6 +106,7 @@ func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req
 		player.closeNow(ctx, nil)
 		return
 	}
+	server.queueLock.Unlock()
 
 	bytes, err := json.Marshal(QueueResponse{Found: false})
 	if err != nil {
@@ -141,11 +143,6 @@ func (server *MatchmakingServer) MarkDelete(id uuid.UUID) error {
 // subscribeHandler accepts the WebSocket connection and then subscribes
 // it to all future messages.
 func (server *MatchmakingServer) Subscribe(ctx context.Context, writer http.ResponseWriter, req *http.Request) error {
-	id, err := getId(writer, req)
-	if err != nil {
-		return err
-	}
-
 	// todo accept header
 	conn, err := websocket.Accept(writer, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
@@ -153,12 +150,11 @@ func (server *MatchmakingServer) Subscribe(ctx context.Context, writer http.Resp
 	}
 
 	// todo make session id and add to context
-	slog.InfoContext(ctx, "client subscribed to events from campaign", slog.String("id", id))
+	slog.InfoContext(ctx, "client subscribed to unranked queue")
 
-	server.queueLock.Lock()
-
-	ctx = conn.CloseRead(ctx)
-	player := NewPlayer(conn)
+	// todo not sure why having this causes connection to be closed
+	// ctx = conn.CloseRead(ctx)
+	player := newPlayer(conn, server)
 
 	server.queueLock.Lock()
 	server.queue = append(server.queue, player)

@@ -1,11 +1,70 @@
 ---
-import Layout from "../layouts/Layout.astro";
-
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+import Layout from "../layouts/Layout.astro"
 ---
 
 <Layout>
   <div>hi there</div>
-  <a href="/queue">Join Queue</a>
+  <button id="queue">Join Queue</button>
 </Layout>
+
+<script>
+  const webPath = "http://localhost:4321"
+  const apiPath = "http://localhost:3000"
+  const apiWsPath = "ws://localhost:3000"
+
+  function goTo(id: string) {
+    window.location.href = `${webPath}/game?gameId=${id}`
+  }
+
+  const button = document.getElementById("queue")
+  if (button === null) throw new Error("no button element")
+
+  let ws: WebSocket | null = null
+
+  button.addEventListener("click", async () => {
+    const matchmaking = {
+      unranked: apiPath + "/matchmaking/unranked",
+    }
+    console.log("making request to ", matchmaking.unranked)
+    const res = await fetch(matchmaking.unranked)
+    type Res =
+      | {
+          found: false
+        }
+      | {
+          found: true
+          gameId: string
+        }
+    const json: Res = await res.json()
+
+    console.log({ json })
+
+    if (json.found) {
+      goTo(json.gameId)
+      return
+    }
+
+    ws = new WebSocket(apiWsPath + "/matchmaking/unranked/subscribe")
+
+    ws.addEventListener("open", event => {
+      console.log("open:", event)
+    })
+    ws.addEventListener("close", event => {
+      console.log("close:", event)
+    })
+
+    ws.addEventListener("message", event => {
+      console.log("received:", event)
+      if (typeof event.data !== "string") throw new Error("ws response not a string")
+      const json: Res = JSON.parse(event.data)
+
+      console.log({ json })
+
+      if (json.found) {
+        goTo(json.gameId)
+      } else {
+        throw new Error(JSON.stringify(json, null, 2))
+      }
+    })
+  })
+</script>

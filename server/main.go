@@ -29,6 +29,18 @@ func getAddr() string {
 	return os.Args[1]
 }
 
+type MiddlewareServer struct {
+	ServeMux *http.ServeMux
+}
+
+const CorsHeader = "Access-Control-Allow-Origin"
+const AllowAll = "*"
+
+func (server *MiddlewareServer) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
+	writer.Header().Add(CorsHeader, AllowAll)
+	server.ServeMux.ServeHTTP(writer, req)
+}
+
 // run initializes the chatServer and then
 // starts a http.Server for the passed in address.
 func run() error {
@@ -44,12 +56,15 @@ func run() error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/game/", gameServer)
-	mux.Handle("/match/", matchmakingServer)
+	mux.Handle("/game/", http.StripPrefix("/game", gameServer))
+	mux.Handle("/matchmaking/", http.StripPrefix("/matchmaking", matchmakingServer))
+
+	middlewareServer := MiddlewareServer{ServeMux: mux}
 
 	addr := getAddr()
+	// handler :=
 	httpServer := &http.Server{
-		Handler:      mux,
+		Handler:      &middlewareServer,
 		ReadTimeout:  time.Second * 10,
 		WriteTimeout: time.Second * 10,
 		Addr:         addr,

@@ -464,6 +464,7 @@ func (board *BoardState) Fen() string {
 
 	return ret
 }
+
 func getPiece(char rune) (Piece, error) {
 	switch char {
 	case 'k':
@@ -532,13 +533,7 @@ func ParseFen(fen string) (*BoardState, error) {
 		}
 
 		if piece == Clear {
-			if stateIndex%8 != 0 {
-				errorStr := fmt.Sprintf("/ found in wrong place stateIndex: %d, rowIndex: %d",
-					stateIndex, rowIndex)
-				return nil, errors.New(errorStr)
-			}
-
-			if rowIndex != 8 {
+			if stateIndex%8 != 0 || rowIndex != 8 {
 				errorStr := fmt.Sprintf("/ found in wrong place stateIndex: %d, rowIndex: %d",
 					stateIndex, rowIndex)
 				return nil, errors.New(errorStr)
@@ -573,11 +568,11 @@ func ParseFen(fen string) (*BoardState, error) {
 		return nil, errors.New("need both black and white king on the board")
 	}
 
-	color := White
+	var colour Colour
 	if fen[boardStrLen] == 'w' {
-		color = White
+		colour = White
 	} else if fen[boardStrLen] == 'b' {
-		color = Black
+		colour = Black
 	} else {
 		errorStr := fmt.Sprintf("unexpected character, should be w or b: %s",
 			string(fen[boardStrLen]))
@@ -599,7 +594,7 @@ func ParseFen(fen string) (*BoardState, error) {
 	}
 
 	moveCounter = moveCounter * 2
-	if color == Black {
+	if colour == Black {
 		moveCounter += 1
 	}
 
