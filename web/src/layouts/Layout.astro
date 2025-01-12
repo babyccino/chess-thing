@@ -1,6 +1,6 @@
 ---
-import { ClientRouter } from "astro:transitions";
-import { Icon } from "astro-icon/components";
+import { ClientRouter } from "astro:transitions"
+import { Icon } from "astro-icon/components"
 ---
 
 <!doctype html>
@@ -28,11 +28,7 @@ import { Icon } from "astro-icon/components";
     </script>
     <div class="relative flex flex-col sm:flex-row">
       <header transition:persist="header">
-        <button
-          data:separator-sidebar
-          class="p-4 sm:hidden"
-          aria-controls="separator-sidebar"
-        >
+        <button data:separator-sidebar class="p-4 sm:hidden" aria-controls="separator-sidebar">
           <span class="sr-only">Open sidebar</span>
           <Icon name="lucide:menu" />
         </button>
@@ -47,16 +43,13 @@ import { Icon } from "astro-icon/components";
           <ul class="font-medium">
             <!-- TODO -->
             <hr class="mt-5 border-none" />
-            <h4 class="text-muted-foreground mb-1 ml-3 text-xs font-light">
-              Legal
-            </h4>
+            <h4 class="text-muted-foreground mb-1 ml-3 text-xs font-light">Legal</h4>
             <!-- TODO -->
           </ul>
         </nav>
       </header>
 
-      <div class="hidden w-64 sm:block" transition:persist="header-blocker">
-      </div>
+      <div class="hidden w-64 sm:block" transition:persist="header-blocker"></div>
 
       <main class="flex min-h-screen flex-1 flex-col items-center">
         <slot />
