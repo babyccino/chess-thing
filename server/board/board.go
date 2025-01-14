@@ -818,7 +818,8 @@ func (board *BoardState) MoveStr(start, end string) error {
 	if err != nil {
 		return err
 	}
-	return board.Move(startPos, endPos)
+	_, err = board.Move(startPos, endPos)
+	return err
 }
 
 func (board *BoardState) UpdateLegalMoves() {
