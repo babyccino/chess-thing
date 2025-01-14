@@ -2,6 +2,7 @@ package game_server
 
 import (
 	"chess/board"
+	"chess/utility"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,27 +24,20 @@ type GameServer struct {
 }
 
 type Session struct {
-	id   uuid.UUID
-	game *Game
+	id    uuid.UUID
+	board *board.BoardState
 
 	subscriberLock sync.Mutex
 	players        [2]*subscriber
-	viewers        map[*subscriber]struct{}
+	viewers        utility.Set[*subscriber]
 
 	updatedAt time.Time
 	createdAt time.Time
 }
-type Game struct {
-	board *board.BoardState
-}
-
-func newGame() *Game {
-	return &Game{board: board.NewBoard()}
-}
 
 type subscriber struct {
 	gameId      string
-	events      chan string
+	events      chan Event
 	doneChannel chan struct{}
 	Conn        *websocket.Conn
 	closed      bool
@@ -57,20 +51,22 @@ func NewGameServer() (*GameServer, error) {
 		sessionsLock: sync.Mutex{},
 	}
 
-	server.ServeMux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
-		writer.Write([]byte("Go to wss:*/subscribe/gameId to connect"))
-	})
 	server.ServeMux.HandleFunc("/subscribe/", server.SubscribeHandler)
 
 	return server, nil
 }
 
 func newSession() *Session {
+	board := board.NewBoard()
+	err := board.Init()
+	if err != nil {
+		panic(err)
+	}
 	return &Session{
 		id:             uuid.New(),
-		game:           newGame(),
+		board:          board,
 		subscriberLock: sync.Mutex{},
-		viewers:        make(map[*subscriber]struct{}),
+		viewers:        utility.NewSet[*subscriber](),
 		createdAt:      time.Now(),
 		updatedAt:      time.Now(),
 	}
@@ -116,12 +112,101 @@ func (server *GameServer) SubscribeHandler(writer http.ResponseWriter, req *http
 	}
 }
 
+type eventType = string
+
+const (
+	connect       eventType = "connect"
+	connectViewer           = "connectViewer"
+	move                    = "move"
+	end                     = "end"
+	errorEvent              = "error"
+)
+
+/* TS
+type ConnectEvent = {
+  type: "connect"
+  fen: string
+  moveHistory?: string[]
+  colour: "w" | "b"
+  legalMoves?: string[]
+}
+type ConnectViewerEvent = {
+  type: "connectViewer"
+  fen: string
+  moveHistory?: string[]
+}
+type MoveEvent = {
+  type: "move"
+  move: string
+  fen: string
+  legalMoves?: string[]
+}
+type SendMoveEvent = {
+  type: "sendMove"
+  move: string
+}
+type EndEvent = {
+  type: "end"
+  victor: "w" | "b"
+}
+type ChatEvent = {
+  type: "chat"
+  text: string
+}
+type ErrorEvent = {
+  type: "error"
+  text: string
+}
+*/
+
 type Event struct {
-	Type       string   `json:"type"`
-	Fen        string   `json:"fen,omitempty"`
-	Colour     string   `json:"colour,omitempty"`
-	LegalMoves []string `json:"legalMoves,omitempty"`
-	Move       string   `json:"move,omitempty"`
+	Type        eventType `json:"type"`
+	Fen         string    `json:"fen,omitempty"`
+	MoveHistory []string  `json:"moveHistory,omitempty"`
+	Colour      string    `json:"colour,omitempty"`
+	Move        string    `json:"move,omitempty"`
+	LegalMoves  []string  `json:"legalMoves,omitempty"`
+	Outcome     string    `json:"outcome,omitempty"`
+	Victor      string    `json:"victor,omitempty"`
+	Text        string    `json:"text,omitempty"`
+}
+
+func moveList(moves []board.Move) []string {
+	retMoves := make([]string, len(moves))
+	for i, move := range moves {
+		retMoves[i] = move.Serialise()
+	}
+	return retMoves
+}
+
+func serialiseColour(colour board.Colour) string {
+	var retColour string
+	if colour == board.White {
+		retColour = "w"
+	} else if colour == board.Black {
+		retColour = "b"
+	} else {
+		retColour = "v"
+	}
+	return retColour
+}
+
+func (session *Session) CreateConnectEvent(colour board.Colour) Event {
+	if colour == board.None {
+		return Event{
+			Type:        connectViewer,
+			Fen:         session.board.Fen(),
+			MoveHistory: moveList(session.board.MoveHistory),
+		}
+	} else {
+		return Event{
+			Type:        connect,
+			Fen:         session.board.Fen(),
+			MoveHistory: moveList(session.board.MoveHistory),
+			Colour:      serialiseColour(colour),
+			LegalMoves:  moveList(session.board.GetLegalMoves()),
+		}
+	}
 }
 
 func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWriter, req *http.Request) error {
@@ -147,11 +232,8 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 		return err
 	}
 
-	// todo make session id and add to context
-	slog.InfoContext(ctx, "client subscribed to events from campaign", slog.String("id", id.String()))
-
 	sub := &subscriber{
-		events:      make(chan string, 10),
+		events:      make(chan Event, 10),
 		doneChannel: make(chan struct{}),
 		Conn:        Conn,
 		session:     session,
@@ -160,31 +242,36 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	// just make any connection either one of the players
 	// todo: obvs this is just for testing
 	session.subscriberLock.Lock()
-	if session.players[0] != nil {
+	colour := board.None
+	if session.players[0] == nil {
+		colour = board.White
 		session.players[0] = sub
-	} else if session.players[1] != nil {
+		slog.InfoContext(ctx, "added client to session as white player", slog.String("id", id.String()))
+	} else if session.players[1] == nil {
+		colour = board.Black
 		session.players[1] = sub
+		slog.InfoContext(ctx, "added client to session as black player", slog.String("id", id.String()))
 	} else {
-		session.viewers[sub] = struct{}{}
+		colour = board.None
+		session.viewers.Add(sub)
+		slog.InfoContext(ctx, "added client to session as viewer", slog.String("id", id.String()))
 	}
 	session.subscriberLock.Unlock()
 
 	ctx = context.WithoutCancel(ctx)
 
-	resp, err := json.Marshal(event)
-	if err2 != nil {
-		err = err2
-		return
+	// todo send info about other player
+	event := session.CreateConnectEvent(colour)
+	err = sub.write(ctx, event)
+	if err != nil {
+		sub.closeNow(ctx, err)
+		return err
 	}
 
-	err2 = writeTimeout(ctx, time.Second*5, sub.Conn, resp)
-	if err2 != nil {
-		err = err2
-		return
+	if colour != board.None {
+		go sub.initRead(ctx)
 	}
-
 	go sub.initWrite(ctx)
-	go sub.initRead(ctx)
 
 	return nil
 }
@@ -198,41 +285,42 @@ func (session *Session) DeleteSubscriber(sub *subscriber) {
 	// TODO concurrent map writes probably because this is being called twice?
 	session.subscriberLock.Lock()
 	defer session.subscriberLock.Unlock()
-	delete(session.viewers, sub)
+	session.viewers.Remove(sub)
 }
 
 func (session *Session) end() {
 
 }
 
-func (session *Session) publishImpl(str string, sub *subscriber) {
+func (session *Session) publishImpl(event Event, sub *subscriber) {
 	if sub == nil || sub.events == nil {
 		return
 	}
 	// if buffer is full the subscriber is closed
 	count := 0
 	select {
-	case sub.events <- str:
+	case sub.events <- event:
 		count++
 	default:
 		sub.closeSlow()
 	}
 }
-func (session *Session) publish(sub *subscriber, str string) {
+func (session *Session) publish(sub *subscriber, event Event) {
 	count := 0
 	for _, player := range session.players {
 		if player == sub {
 			continue
 		}
-		session.publishImpl(str, player)
+		session.publishImpl(event, player)
 	}
-	for viewer := range session.viewers {
+	for viewer := range session.viewers.Iter() {
 		if viewer == sub {
 			continue
 		}
-		session.publishImpl(str, viewer)
+		session.publishImpl(event, viewer)
 	}
-	fmt.Printf("[debug] %d subscribers were sent an event \n", count)
+	slog.Debug("subscribers were sent an event",
+		slog.Int("count", count))
 }
 
 func writeTimeout(ctx context.Context, timeout time.Duration, wsConn *websocket.Conn, msg []byte) error {
@@ -263,6 +351,8 @@ func (sub *subscriber) closeSlow() {
 	sub.session.DeleteSubscriber(sub)
 }
 
+var buffer = [1000]byte{}
+
 func (sub *subscriber) initRead(ctx context.Context) {
 	for {
 		msgType, reader, err := sub.Conn.Reader(ctx)
@@ -277,14 +367,70 @@ func (sub *subscriber) initRead(ctx context.Context) {
 			return
 		}
 
-		buf := make([]byte, 15)
-		n, err := reader.Read(buf)
+		n, err := reader.Read(buffer[:])
 		if err != nil {
 			sub.closeNow(ctx, err)
 			return
 		}
 
-		sub.session.publish(sub, string(buf[:n]))
+		var eventBuffer = Event{}
+		err = json.Unmarshal(buffer[:n], &eventBuffer)
+		if err != nil {
+			sub.closeNow(ctx, err)
+			return
+		}
+		if eventBuffer.Type != "sendMove" {
+			sub.closeNow(ctx, errors.New("event sent is not \"sendMove\""))
+			return
+		}
+
+		move, err := board.DeserialiseMove(eventBuffer.Move)
+		if err != nil {
+			sub.closeNow(ctx, err)
+			return
+		}
+
+		sub.session.handleMove(sub, move)
+	}
+}
+
+func (session *Session) handleError(err error) {
+	session.publish(nil, Event{Type: errorEvent, Text: err.Error()})
+	for _, player := range session.players {
+		player.closeNow(nil, err)
+	}
+	for viewer := range session.viewers.Iter() {
+		viewer.closeNow(nil, err)
+	}
+}
+func (session *Session) handleMove(sub *subscriber, move board.Move) {
+	err := session.board.MakeMove(move)
+	if err != nil {
+		session.handleError(err)
+	}
+
+	serialisedLegalMoves := board.SerialiseMoveList(session.board.LegalMoves)
+	event := Event{
+		Type:       "move",
+		Move:       move.Serialise(),
+		Fen:        session.board.Fen(),
+		LegalMoves: serialisedLegalMoves,
+	}
+	session.publish(sub, event)
+
+	win := session.board.HasWinner()
+	switch win {
+	case board.BlackWin:
+		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "b"})
+	case board.WhiteWin:
+		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "w"})
+	case board.Stalemate:
+		session.publish(nil, Event{Type: "end", Outcome: "stalemate", Victor: "w"})
+	case board.MoveRuleDraw:
+		session.publish(nil, Event{Type: "end", Outcome: "stalemate", Victor: "w"})
+	case board.NoWin:
+		fallthrough
+	default:
 	}
 }
 
@@ -292,6 +438,20 @@ const (
 	pongWait     = 5 * time.Second
 	pingInterval = (pongWait * 9) / 10
 )
+
+func (sub *subscriber) write(ctx context.Context, event Event) error {
+	resp, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	err = writeTimeout(ctx, time.Second*5, sub.Conn, resp)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func (sub *subscriber) initWrite(ctx context.Context) {
 	pinger := time.NewTicker(pingInterval)
@@ -304,13 +464,7 @@ func (sub *subscriber) initWrite(ctx context.Context) {
 		case <-sub.doneChannel:
 			return
 		case event := <-sub.events:
-			resp, err2 := json.Marshal(event)
-			if err2 != nil {
-				err = err2
-				return
-			}
-
-			err2 = writeTimeout(ctx, time.Second*5, sub.Conn, resp)
+			err2 := sub.write(ctx, event)
 			if err2 != nil {
 				err = err2
 				return

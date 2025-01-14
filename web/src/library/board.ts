@@ -1,3 +1,5 @@
+import type { SendMoveEvent } from "./events"
+
 export type Piece = number
 
 export const Clear = 0
@@ -54,10 +56,25 @@ const NoCheck: Check = 0
 const WhiteCheck: Check = 1
 const BlackCheck: Check = 3
 
-type Board = {
-  state: BoardState
-  check: Check
+export type Position = number
+export type Move = { from: Position; to: Position }
+
+export type Board = {
+  state: Piece[]
+  colour: Colour
   moveCounter: number
+  legalMoves: Move[]
+  moveHistory: Move[]
+}
+
+export function newBoard(): Board {
+  return {
+    state: initialBoardState(),
+    colour: White,
+    moveCounter: 0,
+    legalMoves: [],
+    moveHistory: [],
+  }
 }
 
 export function padNumber(num: number): string {
@@ -65,24 +82,54 @@ export function padNumber(num: number): string {
   return num.toString()
 }
 
-export function serialiseMove(from: number, to: number): string {
-  return padNumber(from) + padNumber(to)
+export function serialiseMove(from: Position, to: Position): string {
+  return indexToPosition(from) + ":" + indexToPosition(to)
+}
+export function deSerialiseMove(str: string): Move {
+  const parts = str.split(":")
+  if (parts.length != 2) {
+    throw new Error("failed deserialising moves")
+  }
+
+  const from = stringToIndex(parts[0])
+  const to = stringToIndex(parts[0])
+
+  return { from, to }
 }
 
 const aChar = "A".charCodeAt(0)
-const zeroChar = "1".charCodeAt(0)
+const zeroChar = "0".charCodeAt(0)
+const oneChar = "1".charCodeAt(0)
+const eightChar = "8".charCodeAt(0)
 export function indexToFile(index: number): string {
   const x = index % 8
   return String.fromCharCode(aChar + 7 - x)
 }
 export function indexToRow(index: number): string {
   const y = index / 8
-  return String.fromCharCode(zeroChar + y)
+  return String.fromCharCode(oneChar + y)
 }
 export function indexToPosition(index: number): string {
   const y = index / 8
   const x = index % 8
   return indexToFile(index) + indexToRow(index)
+}
+
+function stringToIndex(str: string): Position {
+  if (str.length !== 2) throw new Error("string must be of length 2")
+
+  const file = str.charCodeAt(0) - aChar
+  const rank = str.charCodeAt(1) - oneChar
+  if (file < 0 || file > 7) throw new Error("file out of bounds")
+  if (rank < 0 || rank > 7) throw new Error("rank out of bounds")
+
+  return file + rank * 8
+}
+export function parseMove(str: string): Move {
+  if (str.length !== 5) throw new Error()
+  const parts = str.split(":")
+  if (parts.length !== 2) throw new Error()
+  return { from: stringToIndex(parts[0]), to: stringToIndex(parts[1]) }
 }
 
 function getPiece(char: string): Piece {
@@ -104,9 +151,9 @@ function getPiece(char: string): Piece {
 
 const White = "w"
 const Black = "b"
-type Colour = typeof White | typeof Black
+export type Colour = typeof White | typeof Black
 
-function ParseFen(fen: string): Board {
+export function parseFen(fen: string): Board {
   const state = emptyBoardState()
   let stateIndex = 0
   let rowIndex = 0
@@ -118,16 +165,15 @@ function ParseFen(fen: string): Board {
   for (let strIndex = 0; strIndex < fen.length; ++strIndex) {
     const char = fen[strIndex]
     if (stateIndex == 64) {
-      if (char != " ") {
-        throw new Error("space not found at end of pieces")
-      }
+      if (char != " ") throw new Error("space not found at end of pieces")
 
       boardStrLen = strIndex + 1
       break
     }
 
-    if (char >= "1" && char <= "8") {
-      const delta = char.charCodeAt(0) - zeroChar
+    const charCode = char.charCodeAt(0)
+    if (charCode >= oneChar && charCode <= eightChar) {
+      const delta = charCode - zeroChar
       stateIndex += delta
       rowIndex += delta
 
@@ -169,11 +215,11 @@ function ParseFen(fen: string): Board {
     throw new Error("need both black and white king on the board")
   }
 
-  let color: Colour
+  let colour: Colour
   if (fen[boardStrLen] == "w") {
-    color = White
+    colour = White
   } else if (fen[boardStrLen] == "b") {
-    color = Black
+    colour = Black
   } else {
     const errorStr = `unexpected character, should be w or b: ${fen[boardStrLen]}`
     throw new Error(errorStr)
@@ -189,9 +235,15 @@ function ParseFen(fen: string): Board {
   let moveCounter = parseInt(fen.substring(boardStrLen))
 
   moveCounter = moveCounter * 2
-  if (color == Black) {
+  if (colour == Black) {
     moveCounter += 1
   }
 
-  return { state, check: 0, moveCounter: moveCounter }
+  return {
+    state,
+    colour,
+    moveCounter,
+    legalMoves: [],
+    moveHistory: [],
+  }
 }

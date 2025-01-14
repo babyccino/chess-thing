@@ -2,6 +2,7 @@ package board_test
 
 import (
 	"chess/board"
+	"chess/utility"
 	"fmt"
 	"strings"
 	"testing"
@@ -94,7 +95,7 @@ func Test_check(test *testing.T) {
 			boardState, err := board.ParseFen(fen)
 			assertSuccess(test, err)
 
-			err = boardState.UpdateCheckState(shouldError)
+			err = boardState.UpdateCheckState()
 
 			if shouldError {
 				assertFailure(test, err)
@@ -214,11 +215,11 @@ func Test_legal_moves(test *testing.T) {
 				parsedExpectedMoves = append(parsedExpectedMoves, parsedMove)
 			}
 
-			expectedMoveMap := map[board.Move]struct{}{}
+			expectedMoveMap := utility.NewSet[board.Move]()
 			for _, expectedMove := range parsedExpectedMoves {
-				expectedMoveMap[expectedMove] = struct{}{}
+				expectedMoveMap.Add(expectedMove)
 			}
-			if len(parsedExpectedMoves) != len(expectedMoveMap) {
+			if len(parsedExpectedMoves) != expectedMoveMap.Len() {
 				test.Fatalf(
 					"board: %s\nexpectedMoves contains duplicates: %s",
 					fen,
@@ -229,29 +230,27 @@ func Test_legal_moves(test *testing.T) {
 			boardState, err := board.ParseFen(fen)
 			assertSuccess(test, err)
 
-			err = boardState.UpdateCheckState(false)
-			assertSuccess(test, err)
-			boardState.UpdateAttackedSquares()
+			err = boardState.UpdateBoardState()
 
 			moves := boardState.GetLegalMoves()
 
-			moveMap := map[board.Move]struct{}{}
+			moveMap := utility.NewSet[board.Move]()
 			for _, move := range moves {
-				moveMap[move] = struct{}{}
+				moveMap.Add(move)
 			}
-			if len(moves) != len(moveMap) {
+			if len(moves) != moveMap.Len() {
 				test.Fatalf("board: %s\nmoves contains duplicates: %v", fen, board.MoveListToString(moves))
 			}
 
-			if len(expectedMoveMap) != len(moveMap) {
+			if expectedMoveMap.Len() != moveMap.Len() {
 				test.Fatalf(
 					"board: %s\nexpected moves and received moves are not equal\nepxected: %v\ncalculated: %v",
 					fen,
 					board.MoveListToString(parsedExpectedMoves), board.MoveListToString(moves))
 			}
 
-			for move := range expectedMoveMap {
-				_, found := moveMap[move]
+			for move := range expectedMoveMap.Iter() {
+				found := moveMap.Has(move)
 				if !found {
 					test.Fatalf("board: %s\nm%s was expected to be a legal move but was not\ncalculated: %v",
 						fen, &move, board.MoveListToString(moves))

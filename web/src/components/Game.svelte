@@ -1,13 +1,22 @@
 <script lang="ts">
   import Icon from "@iconify/svelte"
   import {
-    type Piece,
+    deSerialiseMove,
     indexToFile,
     indexToRow,
-    initialBoardState,
+    newBoard,
     pieceToIcon,
     serialiseMove,
   } from "../library/board"
+  import {
+    parseBoardState,
+    sendMove,
+    type ConnectEvent,
+    type ConnectViewerEvent,
+    type GameEvent,
+    type MoveEvent,
+  } from "../library/events"
+  import { onMount } from "svelte"
 
   let messages = $state<any[]>([])
 
@@ -27,41 +36,46 @@
     return id
   }
 
-  const id = getId()
-  const ws: WebSocket = new WebSocket(`ws://localhost:3000/game/subscribe/${id}`)
+  let ws = $state<null | WebSocket>(null)
 
-  ws.addEventListener("open", event => {
-    console.log("open:", event)
+  onMount(() => {
+    console.log("creating ws")
+    const id = getId()
+    ws = new WebSocket(`ws://localhost:3000/game/subscribe/${id}`)
+
+    ws.addEventListener("open", event => {
+      console.log("open:", event)
+    })
+
+    ws.addEventListener("message", event => {
+      console.log("received:", event)
+      messages.push(event.data)
+      if (typeof event.data !== "string") throw new Error("event not string")
+      const json: GameEvent = JSON.parse(event.data)
+      console.log("received message", json)
+      handleEvent(json)
+    })
   })
 
-  type Event =
-    | {
-        type: "connect"
-        fen: string
-        colour: "w" | "b"
-        legalMoves: string[]
-      }
-    | {
-        type: "move"
-        move: string
-        fen: string
-        legalMoves: string[]
-      }
-    | {
-        type: "end"
-        victor: "w" | "b"
-      }
+  function handleConnect(event: ConnectEvent) {
+    const newBoard = parseBoardState(event)
+    colour = event.colour === "w"
+    board = newBoard
+    board.legalMoves = event.legalMoves?.map(deSerialiseMove) ?? []
+  }
+  function handleMove(event: MoveEvent) {}
+  function handleConnectViewer(event: ConnectViewerEvent) {}
+  // function handleEnd(event: EndEvent) {}
+  function handleEvent(event: GameEvent) {
+    if (event.type === "connect") return handleConnect(event)
+    if (event.type === "connectViewer") return handleConnectViewer(event)
+    if (event.type === "move") return handleMove(event)
+    // if (event.type === "end") return handleEnd(event)
+  }
 
-  ws.addEventListener("message", event => {
-    console.log("received:", event)
-    messages.push(event.data)
-    if (typeof event.data !== "string") throw new Error("event not string")
-    const json: Event = JSON.parse(event.data)
-  })
-
-  let board = $state<Piece[]>(initialBoardState)
-  let colour = $state(true)
-  let displayBoard = $derived(colour ? board.toReversed() : board)
+  let board = $state(newBoard())
+  let colour = $derived(true)
+  let displayPieces = $derived(colour ? board.state.toReversed() : board.state)
   let selected = $state<number | null>(null)
 
   function fromDisplayIndex(index: number) {
@@ -73,8 +87,12 @@
     if (selected === null) {
       selected = square
     } else {
-      ws.send(serialiseMove(selected, square))
+      const from = selected
       selected = null
+      if (board.legalMoves.findIndex(move => move.from === from && move.to === square) != -1) {
+        return
+      }
+      ws?.send(JSON.stringify(sendMove(from, square)))
     }
   }
 
@@ -91,7 +109,7 @@
 </ul>
 
 <div class="grid grid-cols-8">
-  {#each displayBoard as piece, index}
+  {#each displayPieces as piece, index}
     <button
       class={[
         "relative flex h-16 w-16 items-center justify-center",
