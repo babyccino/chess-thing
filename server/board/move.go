@@ -41,7 +41,7 @@ func DeserialiseMove(str string) (Move, error) {
 	if err != nil {
 		return Move{}, err
 	}
-	to, err := StringToPosition(parts[0])
+	to, err := StringToPosition(parts[1])
 	if err != nil {
 		return Move{}, err
 	}
@@ -91,7 +91,7 @@ func (moveMaker *LegalMoveCreator) addKnightMoves(from Position, pin PinDirectio
 	for dir := Knight1; dir <= Knight8; dir += 1 {
 		to, inBounds := from.AddInBounds(directionToVec(dir))
 		if !inBounds {
-			return
+			continue
 		}
 
 		toPiece := moveMaker.state.GetSquare(to)
@@ -110,7 +110,7 @@ func (moveMaker *LegalMoveCreator) addPawnMove(from Position, dir Direction, pin
 	}
 	toPiece := moveMaker.state.GetSquare(to)
 	if isStraight(dir) {
-		if toPiece.Colour() != moveMaker.colour {
+		if !toPiece.IsClear() && toPiece.Colour() != moveMaker.colour {
 			moveMaker.addMove(from, to)
 		}
 	} else {

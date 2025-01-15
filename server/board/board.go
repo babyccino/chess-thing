@@ -149,8 +149,6 @@ func (board *BoardState) MakeMove(move Move) error {
 		return err
 	}
 
-	board.UpdateLegalMoves()
-
 	board.MoveHistory = append(board.MoveHistory, move)
 	board.MoveCounter += 1
 	if captured {
@@ -158,6 +156,8 @@ func (board *BoardState) MakeMove(move Move) error {
 	} else {
 		board.CaptureMoveCounter += 1
 	}
+
+	board.UpdateLegalMoves()
 
 	return nil
 }

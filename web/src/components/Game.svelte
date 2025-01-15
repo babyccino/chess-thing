@@ -1,12 +1,15 @@
 <script lang="ts">
   import Icon from "@iconify/svelte"
   import {
+    Clear,
     deSerialiseMove,
     indexToFile,
     indexToRow,
     newBoard,
+    parseMove,
     pieceToIcon,
     serialiseMove,
+    type Move,
   } from "../library/board"
   import {
     parseBoardState,
@@ -63,7 +66,16 @@
     board = newBoard
     board.legalMoves = event.legalMoves?.map(deSerialiseMove) ?? []
   }
-  function handleMove(event: MoveEvent) {}
+  function movePiece(move: Move) {
+    const piece = board.state[move.from]
+    board.state[move.from] = Clear
+    board.state[move.to] = piece
+  }
+  function handleMove(event: MoveEvent) {
+    const move = parseMove(event.move)
+    movePiece(move)
+    board.legalMoves = event.legalMoves?.map(deSerialiseMove) ?? []
+  }
   function handleConnectViewer(event: ConnectViewerEvent) {}
   // function handleEnd(event: EndEvent) {}
   function handleEvent(event: GameEvent) {
@@ -82,17 +94,23 @@
     return colour ? 63 - index : index
   }
 
-  function handleClickPiece(square: number) {
-    console.log("clicked", square)
+  function handleClickPiece(to: number) {
+    console.log("clicked", to)
     if (selected === null) {
-      selected = square
+      selected = to
     } else {
       const from = selected
       selected = null
-      if (board.legalMoves.findIndex(move => move.from === from && move.to === square) != -1) {
+      if (board.legalMoves.findIndex(move => move.from === from && move.to === to) === -1) {
+        console.log(board.legalMoves)
+        console.log(from, to)
+        console.warn("not legal move")
         return
       }
-      ws?.send(JSON.stringify(sendMove(from, square)))
+      movePiece({ from, to: to })
+      const hi = sendMove(from, to)
+      console.log("sending", hi)
+      ws?.send(JSON.stringify(hi))
     }
   }
 
@@ -116,7 +134,7 @@
         {
           "bg-gray-700": isBlack(fromDisplayIndex(index)),
           "bg-gray-200": !isBlack(fromDisplayIndex(index)),
-          "border-2 border-red-100": index === selected,
+          "border-2 border-red-100": fromDisplayIndex(index) === selected,
         },
       ]}
       onclick={() => handleClickPiece(fromDisplayIndex(index))}

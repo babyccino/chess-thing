@@ -92,12 +92,13 @@ export function deSerialiseMove(str: string): Move {
   }
 
   const from = stringToIndex(parts[0])
-  const to = stringToIndex(parts[0])
+  const to = stringToIndex(parts[1])
 
   return { from, to }
 }
 
 const aChar = "A".charCodeAt(0)
+const hChar = "H".charCodeAt(0)
 const zeroChar = "0".charCodeAt(0)
 const oneChar = "1".charCodeAt(0)
 const eightChar = "8".charCodeAt(0)
@@ -118,7 +119,7 @@ export function indexToPosition(index: number): string {
 function stringToIndex(str: string): Position {
   if (str.length !== 2) throw new Error("string must be of length 2")
 
-  const file = str.charCodeAt(0) - aChar
+  const file = hChar - str.charCodeAt(0)
   const rank = str.charCodeAt(1) - oneChar
   if (file < 0 || file > 7) throw new Error("file out of bounds")
   if (rank < 0 || rank > 7) throw new Error("rank out of bounds")

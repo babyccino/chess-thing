@@ -4,25 +4,20 @@ import (
 	"chess/board"
 	"chess/utility"
 	"fmt"
-	"strings"
 	"testing"
 )
 
 func Test_piece_functions(test *testing.T) {
-	test.Parallel()
 
 	test.Run("test piece is", func(test *testing.T) {
-		test.Parallel()
 
 		assertBoolEq(test, true, board.WKing.Is(board.King))
 		assertBoolEq(test, false, board.WKing.Is(board.Queen))
 	})
 }
 func Test_fen(test *testing.T) {
-	test.Parallel()
 
 	test.Run("test fen creation", func(test *testing.T) {
-		test.Parallel()
 
 		boardState := board.NewBoard()
 		err := boardState.Init()
@@ -43,7 +38,6 @@ func Test_fen(test *testing.T) {
 	})
 
 	test.Run("test test functions", func(test *testing.T) {
-		test.Parallel()
 
 		boardState1 := board.NewBoard()
 		boardState2 := board.NewBoard()
@@ -59,7 +53,6 @@ func Test_fen(test *testing.T) {
 	})
 
 	test.Run("test fen parsing", func(test *testing.T) {
-		test.Parallel()
 
 		received, err := board.ParseFen("KRBPP3/RQNP4/NBP5/PP5p/P5pp/5pbn/4pnqr/3ppbrk w 0")
 		assertSuccess(test, err)
@@ -84,10 +77,8 @@ func Test_fen(test *testing.T) {
 type PinMap = map[board.Position]board.PinDirection
 
 func Test_check(test *testing.T) {
-	test.Parallel()
 
 	test.Run("test checks", func(test *testing.T) {
-		test.Parallel()
 		helper := func(
 			fen string,
 			endingCheck *board.CheckState,
@@ -192,30 +183,78 @@ func Test_check(test *testing.T) {
 	})
 }
 
+func getExpectedMoves(test *testing.T, expectedMoves []string) []board.Move {
+	test.Helper()
+	parsedExpectedMoves := make([]board.Move, 0, len(expectedMoves))
+	for _, move := range expectedMoves {
+		parsedMove, err := board.DeserialiseMove(move)
+		assertSuccess(test, err)
+		parsedExpectedMoves = append(parsedExpectedMoves, parsedMove)
+	}
+	return parsedExpectedMoves
+}
+
 func Test_legal_moves(test *testing.T) {
-	test.Parallel()
 
 	test.Run("test legal moves", func(test *testing.T) {
-		test.Parallel()
+
+		helperFromBoard := func(
+			boardState *board.BoardState,
+			expectedMoves []string,
+		) *board.BoardState {
+			parsedExpectedMoves := getExpectedMoves(test, expectedMoves)
+
+			fen := boardState.Fen()
+
+			expectedMoveSet := utility.NewSet[board.Move]()
+			for _, expectedMove := range parsedExpectedMoves {
+				expectedMoveSet.Add(expectedMove)
+			}
+			if len(parsedExpectedMoves) != expectedMoveSet.Len() {
+				test.Fatalf(
+					"board: %s\nexpectedMoves contains duplicates: %s",
+					fen,
+					board.MoveListToString(parsedExpectedMoves),
+				)
+			}
+
+			moves := boardState.GetLegalMoves()
+
+			moveSet := utility.NewSet[board.Move]()
+			for _, move := range moves {
+				moveSet.Add(move)
+			}
+			if len(moves) != moveSet.Len() {
+				test.Fatalf("board: %s\ncalculated moves contains duplicates: %v",
+					fen, board.MoveListToString(moves))
+			}
+
+			if expectedMoveSet.Len() != moveSet.Len() {
+				test.Fatalf(
+					"board: %s\nexpected moves and received moves are not equal\nepxected: %s\ncalculated: %s\nin expected, not in calculated: %s\nvice versa: %s",
+					fen,
+					board.MoveListToString(parsedExpectedMoves),
+					board.MoveListToString(moves),
+					board.MoveListToString(expectedMoveSet.DiffArr(&moveSet)),
+					board.MoveListToString(moveSet.DiffArr(&expectedMoveSet)),
+				)
+			}
+			for move := range expectedMoveSet.Iter() {
+				found := moveSet.Has(move)
+				if !found {
+					test.Fatalf("board: %s\nm%s was expected to be a legal move but was not\ncalculated: %v",
+						fen, &move, board.MoveListToString(moves))
+				}
+			}
+
+			return boardState
+		}
 
 		helper := func(
 			fen string,
 			expectedMoves []string,
-		) {
-			parsedExpectedMoves := make([]board.Move, 0, len(expectedMoves))
-			for _, move := range expectedMoves {
-				split := strings.Split(move, ":")
-				if len(split) != 2 {
-					test.Fatalf("error in arg: %s", move)
-				}
-
-				from, err := board.StringToPosition(split[0])
-				assertSuccess(test, err)
-				to, err := board.StringToPosition(split[1])
-				assertSuccess(test, err)
-				parsedMove := board.Move{from, to}
-				parsedExpectedMoves = append(parsedExpectedMoves, parsedMove)
-			}
+		) *board.BoardState {
+			parsedExpectedMoves := getExpectedMoves(test, expectedMoves)
 
 			expectedMoveSet := utility.NewSet[board.Move]()
 			for _, expectedMove := range parsedExpectedMoves {
@@ -247,9 +286,13 @@ func Test_legal_moves(test *testing.T) {
 
 			if expectedMoveSet.Len() != moveSet.Len() {
 				test.Fatalf(
-					"board: %s\nexpected moves and received moves are not equal\nepxected: %v\ncalculated: %v",
+					"board: %s\nexpected moves and received moves are not equal\nepxected: %s\ncalculated: %s\nin expected, not in calculated: %s\nvice verse: %s",
 					fen,
-					board.MoveListToString(parsedExpectedMoves), board.MoveListToString(moves))
+					board.MoveListToString(parsedExpectedMoves),
+					board.MoveListToString(moves),
+					board.MoveListToString(expectedMoveSet.DiffArr(&moveSet)),
+					board.MoveListToString(moveSet.DiffArr(&expectedMoveSet)),
+				)
 			}
 
 			for move := range expectedMoveSet.Iter() {
@@ -259,56 +302,58 @@ func Test_legal_moves(test *testing.T) {
 						fen, &move, board.MoveListToString(moves))
 				}
 			}
+
+			return boardState
 		}
 
 		// king moves
-		helper(
+		_ = helper(
 			"k7/8/8/8/8/8/8/7K w 0",
 			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
-		helper(
+		_ = helper(
 			"k7/P7/8/8/8/8/8/7K w 0",
 			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
-		helper(
+		_ = helper(
 			"k7/1P6/8/8/8/8/8/7K w 0",
 			[]string{"H1:G2"},
 		)
-		helper(
+		_ = helper(
 			"kP6/8/8/8/8/8/8/7K w 0",
 			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
-		helper(
+		_ = helper(
 			"k7/1P6/1P6/8/8/8/8/7K w 0",
 			[]string{},
 		)
 		//
 
 		// king + others
-		helper(
+		_ = helper(
 			"k7/1p6/8/8/8/8/8/7K w 0",
 			[]string{"H1:H2", "H1:G1", "G2:F3"},
 		)
-		helper(
+		_ = helper(
 			"kp6/1P6/8/8/8/8/8/7K w 0",
 			[]string{"H1:G2", "G1:G2", "G1:F2"},
 		)
 
-		helper(
+		_ = helper(
 			"kp6/1P6/8/8/8/8/8/7K w 0",
 			[]string{"H1:G2", "G1:G2", "G1:F2"},
 		)
 		//
 
 		// checks
-		helper(
+		_ = helper(
 			"kP6/pp6/8/8/8/1r6/8/7K w 0",
 			[]string{"H1:G1"},
 		)
 		//
 
 		// starting position
-		helper(
+		boardState := helper(
 			"krbpp3/rqnp4/nbp5/pp5P/p5PP/5PBN/4PNQR/3PPBRK w 0",
 			[]string{
 				// pawn moves
@@ -331,7 +376,36 @@ func Test_legal_moves(test *testing.T) {
 				"G3:C7",
 			},
 		)
-		//
+
+		move, err := board.DeserialiseMove("D1:C2")
+		assertSuccess(test, err)
+		err = boardState.MakeMove(move)
+		assertSuccess(test, err)
+
+		helperFromBoard(
+			boardState,
+			[]string{
+				// pawn moves
+				"E8:F7",
+				"D8:E7",
+				"D7:E6",
+				"C6:D5",
+				"B5:C4",
+				"A5:B4",
+				"A4:B3",
+				// knight moves
+				"C7:E6",
+				"C7:D5",
+				"A6:C5",
+				"A6:B4",
+				// bishop moves
+				"B6:C5",
+				"B6:D4",
+				"B6:E3",
+				"B6:F2",
+			},
+		)
+
 	})
 }
 

@@ -391,6 +391,7 @@ func (sub *subscriber) initRead(ctx context.Context) {
 			sub.closeNow(ctx, err)
 			return
 		}
+		fmt.Printf("%+v\n", move)
 
 		sub.session.handleMove(sub, move)
 	}
