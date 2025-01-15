@@ -17,8 +17,12 @@ func (move *Move) String() string {
 
 func MoveListToString(moveList []Move) string {
 	ret := "["
-	for _, move := range moveList {
-		ret += move.String() + ", "
+	for i, move := range moveList {
+		if i < len(moveList)-1 {
+			ret += move.String() + ", "
+		} else {
+			ret += move.String()
+		}
 	}
 	return ret + "]"
 }
@@ -89,11 +93,11 @@ func (moveMaker *LegalMoveCreator) addKnightMoves(from Position, pin PinDirectio
 		if !inBounds {
 			return
 		}
+
 		toPiece := moveMaker.state.GetSquare(to)
-		if toPiece.Colour() == moveMaker.colour {
-			return
+		if toPiece.IsClear() || toPiece.Colour() != moveMaker.colour {
+			moveMaker.addMove(from, to)
 		}
-		moveMaker.addMove(from, to)
 	}
 }
 func (moveMaker *LegalMoveCreator) addPawnMove(from Position, dir Direction, pin PinDirection) {
@@ -135,22 +139,22 @@ func (moveMaker *LegalMoveCreator) addMovesInDirection(from Position, dir Direct
 		return
 	}
 	to := from
+	dirVec := directionToVec(dir)
 	for {
 		var inBounds bool
-		to, inBounds = to.AddInBounds(to)
+		to, inBounds = to.AddInBounds(dirVec)
 		if !inBounds {
 			return
 		}
 
-		piece := moveMaker.state.GetSquare(to)
-		if piece.IsClear() {
-			moveMaker.addMove(from, to)
-			continue
-		}
-
 		toPiece := moveMaker.state.GetSquare(to)
-		if toPiece.Colour() != moveMaker.colour {
+		if toPiece.IsClear() {
 			moveMaker.addMove(from, to)
+		} else {
+			if toPiece.Colour() != moveMaker.colour {
+				moveMaker.addMove(from, to)
+			}
+			return
 		}
 	}
 }

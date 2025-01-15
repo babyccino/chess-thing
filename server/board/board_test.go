@@ -25,13 +25,15 @@ func Test_fen(test *testing.T) {
 		test.Parallel()
 
 		boardState := board.NewBoard()
+		err := boardState.Init()
+		assertSuccess(test, err)
 		assertStrEquality(
 			test,
 			"krbpp3/rqnp4/nbp5/pp5P/p5PP/5PBN/4PNQR/3PPBRK w 0",
 			boardState.Fen(),
 		)
 
-		err := boardState.MoveStr("A5", "A6")
+		err = boardState.MoveStr("H5", "H6")
 		assertSuccess(test, err)
 		assertStrEquality(
 			test,
@@ -215,11 +217,11 @@ func Test_legal_moves(test *testing.T) {
 				parsedExpectedMoves = append(parsedExpectedMoves, parsedMove)
 			}
 
-			expectedMoveMap := utility.NewSet[board.Move]()
+			expectedMoveSet := utility.NewSet[board.Move]()
 			for _, expectedMove := range parsedExpectedMoves {
-				expectedMoveMap.Add(expectedMove)
+				expectedMoveSet.Add(expectedMove)
 			}
-			if len(parsedExpectedMoves) != expectedMoveMap.Len() {
+			if len(parsedExpectedMoves) != expectedMoveSet.Len() {
 				test.Fatalf(
 					"board: %s\nexpectedMoves contains duplicates: %s",
 					fen,
@@ -230,27 +232,28 @@ func Test_legal_moves(test *testing.T) {
 			boardState, err := board.ParseFen(fen)
 			assertSuccess(test, err)
 
-			err = boardState.UpdateBoardState()
+			err = boardState.Init()
 
 			moves := boardState.GetLegalMoves()
 
-			moveMap := utility.NewSet[board.Move]()
+			moveSet := utility.NewSet[board.Move]()
 			for _, move := range moves {
-				moveMap.Add(move)
+				moveSet.Add(move)
 			}
-			if len(moves) != moveMap.Len() {
-				test.Fatalf("board: %s\nmoves contains duplicates: %v", fen, board.MoveListToString(moves))
+			if len(moves) != moveSet.Len() {
+				test.Fatalf("board: %s\ncalculated moves contains duplicates: %v",
+					fen, board.MoveListToString(moves))
 			}
 
-			if expectedMoveMap.Len() != moveMap.Len() {
+			if expectedMoveSet.Len() != moveSet.Len() {
 				test.Fatalf(
 					"board: %s\nexpected moves and received moves are not equal\nepxected: %v\ncalculated: %v",
 					fen,
 					board.MoveListToString(parsedExpectedMoves), board.MoveListToString(moves))
 			}
 
-			for move := range expectedMoveMap.Iter() {
-				found := moveMap.Has(move)
+			for move := range expectedMoveSet.Iter() {
+				found := moveSet.Has(move)
 				if !found {
 					test.Fatalf("board: %s\nm%s was expected to be a legal move but was not\ncalculated: %v",
 						fen, &move, board.MoveListToString(moves))
@@ -261,19 +264,19 @@ func Test_legal_moves(test *testing.T) {
 		// king moves
 		helper(
 			"k7/8/8/8/8/8/8/7K w 0",
-			[]string{"A1:A2", "A1:B2", "A1:B1"},
+			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
 		helper(
 			"k7/P7/8/8/8/8/8/7K w 0",
-			[]string{"A1:A2", "A1:B2", "A1:B1"},
+			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
 		helper(
 			"k7/1P6/8/8/8/8/8/7K w 0",
-			[]string{"A1:B2"},
+			[]string{"H1:G2"},
 		)
 		helper(
 			"kP6/8/8/8/8/8/8/7K w 0",
-			[]string{"A1:A2", "A1:B2", "A1:B1"},
+			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
 		helper(
 			"k7/1P6/1P6/8/8/8/8/7K w 0",
@@ -284,23 +287,49 @@ func Test_legal_moves(test *testing.T) {
 		// king + others
 		helper(
 			"k7/1p6/8/8/8/8/8/7K w 0",
-			[]string{"A1:A2", "A1:B1", "B2:C3"},
+			[]string{"H1:H2", "H1:G1", "G2:F3"},
 		)
 		helper(
 			"kp6/1P6/8/8/8/8/8/7K w 0",
-			[]string{"A1:B2", "B1:B2", "B1:C2"},
+			[]string{"H1:G2", "G1:G2", "G1:F2"},
+		)
+
+		helper(
+			"kp6/1P6/8/8/8/8/8/7K w 0",
+			[]string{"H1:G2", "G1:G2", "G1:F2"},
 		)
 		//
 
 		// checks
 		helper(
-			"kP6/p7/8/8/8/1r6/8/7K w 0",
-			[]string{"A1:B1", "A1:B2", "B6:B1"},
-		)
-
-		helper(
 			"kP6/pp6/8/8/8/1r6/8/7K w 0",
-			[]string{"A1:B1"},
+			[]string{"H1:G1"},
+		)
+		//
+
+		// starting position
+		helper(
+			"krbpp3/rqnp4/nbp5/pp5P/p5PP/5PBN/4PNQR/3PPBRK w 0",
+			[]string{
+				// pawn moves
+				"D1:C2",
+				"E1:D2",
+				"E2:D3",
+				"F3:E4",
+				"G4:F5",
+				"H4:G5",
+				"H5:G6",
+				// knight moves
+				"F2:D3",
+				"F2:E4",
+				"H3:F4",
+				"H3:G5",
+				// bishop moves
+				"G3:F4",
+				"G3:E5",
+				"G3:D6",
+				"G3:C7",
+			},
 		)
 		//
 	})

@@ -19,7 +19,7 @@ func (pos *Position) Print() {
 	fmt.Print(pos.String() + "\n")
 }
 func (pos *Position) CoordsString() string {
-	bytes := []byte{byte('A' + pos.X), byte('1' + pos.Y)}
+	bytes := []byte{byte('H' - pos.X), byte('1' + pos.Y)}
 	return string(bytes)
 }
 func (pos *Position) Add(other Position) Position {
@@ -55,7 +55,7 @@ func StringToPosition(str string) (Position, error) {
 		return Position{}, errors.New("rank out of bounds")
 	}
 
-	parsedFile := int8(file - 'A')
+	parsedFile := int8('H' - file)
 	parsedRank := int8(rank - '1')
 	return Position{X: parsedFile, Y: parsedRank}, nil
 }

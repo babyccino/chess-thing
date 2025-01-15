@@ -295,14 +295,14 @@ func (board *BoardState) Fen() string {
 	counter := 0
 	ret := ""
 	for index, piece := range board.State {
-		if piece == Clear {
+		if piece.IsClear() {
 			counter += 1
 		} else if counter != 0 {
 			ret += string(rowIntToByte(counter))
 			counter = 0
 		}
 
-		if piece > Clear {
+		if !piece.IsClear() {
 			ret += piece.FenString()
 		}
 

@@ -192,16 +192,18 @@ func serialiseColour(colour board.Colour) string {
 }
 
 func (session *Session) CreateConnectEvent(colour board.Colour) Event {
+	fen := session.board.Fen()
+	println(fen)
 	if colour == board.None {
 		return Event{
 			Type:        connectViewer,
-			Fen:         session.board.Fen(),
+			Fen:         fen,
 			MoveHistory: moveList(session.board.MoveHistory),
 		}
 	} else {
 		return Event{
 			Type:        connect,
-			Fen:         session.board.Fen(),
+			Fen:         fen,
 			MoveHistory: moveList(session.board.MoveHistory),
 			Colour:      serialiseColour(colour),
 			LegalMoves:  moveList(session.board.GetLegalMoves()),
