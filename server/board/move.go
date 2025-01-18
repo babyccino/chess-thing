@@ -264,7 +264,7 @@ func (moveMaker *LegalMoveCreator) getLegalMovesCheck() {
 
 func (moveMaker *LegalMoveCreator) getLegalKingMoves() {
 	for index, piece := range moveMaker.state.State {
-		if piece.Colour() == moveMaker.colour && piece.Is(King) {
+		if !piece.IsClear() && piece.Colour() == moveMaker.colour && piece.Is(King) {
 			moveMaker.addKingMoves(IndexToPosition(index))
 			return
 		}

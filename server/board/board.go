@@ -127,10 +127,6 @@ func (board *BoardState) Init() error {
 	}
 
 	board.UpdateLegalMoves()
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -203,7 +199,7 @@ func (board *BoardState) WhoseMove() Colour {
 }
 
 func (board *BoardState) String() string {
-	str := " A B C D E F G H  \n\n "
+	str := " H G F E D C B A  \n\n "
 	for i, piece := range board.State {
 		str += piece.String() + " "
 		if i%8 == 7 {
@@ -465,7 +461,7 @@ func ParseFen(fen string) (*BoardState, error) {
 
 // check stuff
 
-func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position) {
+func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position, err error) {
 	for i, piece := range board.State {
 		if piece == WKing {
 			newKing := IndexToPosition(i)
@@ -477,11 +473,15 @@ func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position) {
 		}
 	}
 
-	if wKing == nil || bKing == nil {
-		panic("no king???")
+	if wKing == nil && bKing == nil {
+		return nil, nil, errors.New("neither king was found")
+	} else if wKing == nil {
+		return nil, nil, errors.New("no white king was found")
+	} else if bKing == nil {
+		return nil, nil, errors.New("no black king was found")
 	}
 
-	return wKing, bKing
+	return wKing, bKing, nil
 }
 
 const debug = true
@@ -683,7 +683,10 @@ func (board *BoardState) CheckOtherPieceChecks(
 }
 
 func (board *BoardState) UpdateCheckState() error {
-	wKing, bKing := board.GetKingPositions()
+	wKing, bKing, err := board.GetKingPositions()
+	if err != nil {
+		return err
+	}
 
 	check, err := board.CheckKnightChecks(wKing, bKing)
 	if err != nil {

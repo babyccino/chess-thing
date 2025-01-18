@@ -4,6 +4,7 @@ import (
 	"chess/board"
 	"chess/utility"
 	"fmt"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -64,7 +65,8 @@ func Test_fen(test *testing.T) {
 			"K7/2n5/8/8/8/8/8/7k w 0")
 		assertSuccess(test, err)
 
-		wKing, bKing := boardState.GetKingPositions()
+		wKing, bKing, err := boardState.GetKingPositions()
+		assertSuccess(test, err)
 		board.AssertPositionsEqual(test, *bKing, board.Position{0, 0})
 		board.AssertPositionsEqual(test, *wKing, board.Position{7, 7})
 
@@ -195,9 +197,7 @@ func getExpectedMoves(test *testing.T, expectedMoves []string) []board.Move {
 }
 
 func Test_legal_moves(test *testing.T) {
-
 	test.Run("test legal moves", func(test *testing.T) {
-
 		helperFromBoard := func(
 			boardState *board.BoardState,
 			expectedMoves []string,
@@ -405,7 +405,75 @@ func Test_legal_moves(test *testing.T) {
 				"B6:F2",
 			},
 		)
+	})
 
+	test.Run("regression cases", func(test *testing.T) {
+		boardState, err := board.ParseFen("1rb5/5N2/1Q1P2p1/ppk4P/p2R1n2/1P5n/2B1PN1R/4P2K w 92")
+		assertSuccess(test, err)
+		err = boardState.Init()
+
+		legalMoves := boardState.GetLegalMoves()
+		test.Log(board.MoveListToString(legalMoves))
+		test.Log(boardState.String())
+
+		move, _ := board.DeserialiseMove("F4:E5")
+		err = boardState.MakeMove(move)
+		assertSuccess(test, err)
+
+		test.Log(board.MoveListToString(boardState.GetLegalMoves()))
+		test.Log(boardState.String())
+
+		move, _ = board.DeserialiseMove("A8:B7")
+		err = boardState.MakeMove(move)
+		assertSuccess(test, err)
+
+		test.Log(board.MoveListToString(boardState.GetLegalMoves()))
+		test.Log(boardState.String())
+	})
+
+	test.Run("test random legal moves from start position", func(test *testing.T) {
+		boardState := board.NewBoard()
+		err := boardState.Init()
+		assertSuccess(test, err)
+
+		whoseMove := boardState.WhoseMove()
+		if whoseMove != board.White {
+			test.Fatalf("expected white\nreceived: %s", board.ColourString(whoseMove))
+		}
+
+		previousFen := boardState.Fen()
+		previousMove := board.Move{}
+		for i := range 1000 {
+			fen := boardState.Fen()
+			moves := boardState.GetLegalMoves()
+			move := moves[rand.IntN(len(moves))]
+
+			err := boardState.MakeMove(move)
+			if err != nil {
+				test.Fatalf(
+					"err: %v\nboard failed making move: %s, from: %s\nafter %d moves\nprevious move: %s, previous state: %s",
+					err, move.Serialise(), fen, i, previousMove.Serialise(), previousFen,
+				)
+			}
+
+			previousMove = move
+			previousFen = fen
+
+			win := boardState.HasWinner()
+			if win == board.BlackWin || win == board.WhiteWin {
+				test.Logf("winner was found resetting board after %d moves", i)
+				boardState = board.NewBoard()
+				err := boardState.Init()
+				assertSuccess(test, err)
+			}
+
+			newMove := boardState.WhoseMove()
+			if (whoseMove == board.White || newMove == board.Black) &&
+				(whoseMove == board.Black || newMove == board.White) {
+				test.Fatal("Whose move it is did not change")
+			}
+			whoseMove = newMove
+		}
 	})
 }
 
