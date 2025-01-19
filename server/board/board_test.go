@@ -9,7 +9,6 @@ import (
 )
 
 func Test_piece_functions(test *testing.T) {
-
 	test.Run("test piece is", func(test *testing.T) {
 
 		assertBoolEq(test, true, board.WKing.Is(board.King))
@@ -17,9 +16,7 @@ func Test_piece_functions(test *testing.T) {
 	})
 }
 func Test_fen(test *testing.T) {
-
 	test.Run("test fen creation", func(test *testing.T) {
-
 		boardState := board.NewBoard()
 		err := boardState.Init()
 		assertSuccess(test, err)
@@ -39,7 +36,6 @@ func Test_fen(test *testing.T) {
 	})
 
 	test.Run("test test functions", func(test *testing.T) {
-
 		boardState1 := board.NewBoard()
 		boardState2 := board.NewBoard()
 
@@ -54,7 +50,6 @@ func Test_fen(test *testing.T) {
 	})
 
 	test.Run("test fen parsing", func(test *testing.T) {
-
 		received, err := board.ParseFen("KRBPP3/RQNP4/NBP5/PP5p/P5pp/5pbn/4pnqr/3ppbrk w 0")
 		assertSuccess(test, err)
 		expected := board.NewBoard()
@@ -196,6 +191,63 @@ func getExpectedMoves(test *testing.T, expectedMoves []string) []board.Move {
 	return parsedExpectedMoves
 }
 
+func legalMovesHelper(
+	test *testing.T,
+	fen string,
+	expectedMoves []string,
+) *board.BoardState {
+	parsedExpectedMoves := getExpectedMoves(test, expectedMoves)
+
+	expectedMoveSet := utility.NewSet[board.Move]()
+	for _, expectedMove := range parsedExpectedMoves {
+		expectedMoveSet.Add(expectedMove)
+	}
+	if len(parsedExpectedMoves) != expectedMoveSet.Len() {
+		test.Fatalf(
+			"board: %s\nexpectedMoves contains duplicates: %s",
+			fen,
+			board.MoveListToString(parsedExpectedMoves),
+		)
+	}
+
+	boardState, err := board.ParseFen(fen)
+	assertSuccess(test, err)
+
+	err = boardState.Init()
+
+	moves := boardState.GetLegalMoves()
+
+	moveSet := utility.NewSet[board.Move]()
+	for _, move := range moves {
+		moveSet.Add(move)
+	}
+	if len(moves) != moveSet.Len() {
+		test.Fatalf("board: %s\ncalculated moves contains duplicates: %v",
+			fen, board.MoveListToString(moves))
+	}
+
+	if expectedMoveSet.Len() != moveSet.Len() {
+		test.Fatalf(
+			"board: %s\nexpected moves and received moves are not equal\nepxected: %s\ncalculated: %s\nin expected, not in calculated: %s\nvice verse: %s",
+			fen,
+			board.MoveListToString(parsedExpectedMoves),
+			board.MoveListToString(moves),
+			board.MoveListToString(expectedMoveSet.DiffArr(&moveSet)),
+			board.MoveListToString(moveSet.DiffArr(&expectedMoveSet)),
+		)
+	}
+
+	for move := range expectedMoveSet.Iter() {
+		found := moveSet.Has(move)
+		if !found {
+			test.Fatalf("board: %s\nm%s was expected to be a legal move but was not\ncalculated: %v",
+				fen, &move, board.MoveListToString(moves))
+		}
+	}
+
+	return boardState
+}
+
 func Test_legal_moves(test *testing.T) {
 	test.Run("test legal moves", func(test *testing.T) {
 		helperFromBoard := func(
@@ -250,120 +302,81 @@ func Test_legal_moves(test *testing.T) {
 			return boardState
 		}
 
-		helper := func(
-			fen string,
-			expectedMoves []string,
-		) *board.BoardState {
-			parsedExpectedMoves := getExpectedMoves(test, expectedMoves)
-
-			expectedMoveSet := utility.NewSet[board.Move]()
-			for _, expectedMove := range parsedExpectedMoves {
-				expectedMoveSet.Add(expectedMove)
-			}
-			if len(parsedExpectedMoves) != expectedMoveSet.Len() {
-				test.Fatalf(
-					"board: %s\nexpectedMoves contains duplicates: %s",
-					fen,
-					board.MoveListToString(parsedExpectedMoves),
-				)
-			}
-
-			boardState, err := board.ParseFen(fen)
-			assertSuccess(test, err)
-
-			err = boardState.Init()
-
-			moves := boardState.GetLegalMoves()
-
-			moveSet := utility.NewSet[board.Move]()
-			for _, move := range moves {
-				moveSet.Add(move)
-			}
-			if len(moves) != moveSet.Len() {
-				test.Fatalf("board: %s\ncalculated moves contains duplicates: %v",
-					fen, board.MoveListToString(moves))
-			}
-
-			if expectedMoveSet.Len() != moveSet.Len() {
-				test.Fatalf(
-					"board: %s\nexpected moves and received moves are not equal\nepxected: %s\ncalculated: %s\nin expected, not in calculated: %s\nvice verse: %s",
-					fen,
-					board.MoveListToString(parsedExpectedMoves),
-					board.MoveListToString(moves),
-					board.MoveListToString(expectedMoveSet.DiffArr(&moveSet)),
-					board.MoveListToString(moveSet.DiffArr(&expectedMoveSet)),
-				)
-			}
-
-			for move := range expectedMoveSet.Iter() {
-				found := moveSet.Has(move)
-				if !found {
-					test.Fatalf("board: %s\nm%s was expected to be a legal move but was not\ncalculated: %v",
-						fen, &move, board.MoveListToString(moves))
-				}
-			}
-
-			return boardState
-		}
-
 		// king moves
-		_ = helper(
+		_ = legalMovesHelper(
+			test,
 			"k7/8/8/8/8/8/8/7K w 0",
 			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
-		_ = helper(
+		_ = legalMovesHelper(
+			test,
 			"k7/P7/8/8/8/8/8/7K w 0",
 			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
-		_ = helper(
+		_ = legalMovesHelper(
+			test,
 			"k7/1P6/8/8/8/8/8/7K w 0",
 			[]string{"H1:G2"},
 		)
-		_ = helper(
+		_ = legalMovesHelper(
+			test,
 			"kP6/8/8/8/8/8/8/7K w 0",
 			[]string{"H1:H2", "H1:G2", "H1:G1"},
 		)
-		_ = helper(
+		_ = legalMovesHelper(
+			test,
 			"k7/1P6/1P6/8/8/8/8/7K w 0",
 			[]string{},
 		)
 		//
 
 		// king + others
-		_ = helper(
+		_ = legalMovesHelper(
+			test,
 			"k7/1p6/8/8/8/8/8/7K w 0",
 			[]string{"H1:H2", "H1:G1", "G2:F3"},
 		)
-		_ = helper(
+		_ = legalMovesHelper(
+			test,
 			"kp6/1P6/8/8/8/8/8/7K w 0",
 			[]string{"H1:G2", "G1:G2", "G1:F2"},
 		)
 
-		_ = helper(
+		_ = legalMovesHelper(
+			test,
 			"kp6/1P6/8/8/8/8/8/7K w 0",
 			[]string{"H1:G2", "G1:G2", "G1:F2"},
 		)
 		//
 
 		// checks
-		_ = helper(
-			"kP6/pp6/8/8/8/1r6/8/7K w 0",
+		_ = legalMovesHelper(
+			test,
+			"kP6/nn6/8/8/8/1r6/8/7K w 0",
 			[]string{"H1:G1"},
 		)
 		//
 
 		// starting position
-		boardState := helper(
+		boardState := legalMovesHelper(
+			test,
 			"krbpp3/rqnp4/nbp5/pp5P/p5PP/5PBN/4PNQR/3PPBRK w 0",
 			[]string{
 				// pawn moves
 				"D1:C2",
+				"D1:B3",
 				"E1:D2",
+				"E1:C3",
 				"E2:D3",
+				"E2:C4",
 				"F3:E4",
+				"F3:D5",
 				"G4:F5",
+				"G4:E6",
 				"H4:G5",
+				"H4:F6",
 				"H5:G6",
+				"H5:F7",
 				// knight moves
 				"F2:D3",
 				"F2:E4",
@@ -387,12 +400,19 @@ func Test_legal_moves(test *testing.T) {
 			[]string{
 				// pawn moves
 				"E8:F7",
+				"E8:G6",
 				"D8:E7",
+				"D8:F6",
 				"D7:E6",
+				"D7:F5",
 				"C6:D5",
+				"C6:E4",
 				"B5:C4",
+				"B5:D3",
 				"A5:B4",
+				"A5:C3",
 				"A4:B3",
+				"A4:C2",
 				// knight moves
 				"C7:E6",
 				"C7:D5",
@@ -405,31 +425,41 @@ func Test_legal_moves(test *testing.T) {
 				"B6:F2",
 			},
 		)
+		//
+
+		// regression cases
+		legalMovesHelper(
+			test,
+			"1rb5/5N2/1Q1P2p1/ppk4P/p2R1n2/1P5n/2B1PN1R/4P2K w 92",
+			[]string{"F4:G3"},
+		)
+		//
 	})
 
-	test.Run("regression cases", func(test *testing.T) {
-		boardState, err := board.ParseFen("1rb5/5N2/1Q1P2p1/ppk4P/p2R1n2/1P5n/2B1PN1R/4P2K w 92")
-		assertSuccess(test, err)
-		err = boardState.Init()
+	// test.Run("regression cases", func(test *testing.T) {
+	// 	// todo doesn't work
+	// 	boardState, err := board.ParseFen("1rb5/5N2/1Q1P2p1/ppk4P/p2R1n2/1P5n/2B1PN1R/4P2K w 92")
+	// 	assertSuccess(test, err)
+	// 	err = boardState.Init()
 
-		legalMoves := boardState.GetLegalMoves()
-		test.Log(board.MoveListToString(legalMoves))
-		test.Log(boardState.String())
+	// 	legalMoves := boardState.GetLegalMoves()
+	// 	test.Log(board.MoveListToString(legalMoves))
+	// 	test.Log("\n" + boardState.String())
 
-		move, _ := board.DeserialiseMove("F4:E5")
-		err = boardState.MakeMove(move)
-		assertSuccess(test, err)
+	// 	move, _ := board.DeserialiseMove("F4:E5")
+	// 	err = boardState.MakeMove(move)
+	// 	assertSuccess(test, err)
 
-		test.Log(board.MoveListToString(boardState.GetLegalMoves()))
-		test.Log(boardState.String())
+	// 	test.Log(board.MoveListToString(boardState.GetLegalMoves()))
+	// 	test.Log("\n" + boardState.String())
 
-		move, _ = board.DeserialiseMove("A8:B7")
-		err = boardState.MakeMove(move)
-		assertSuccess(test, err)
+	// 	move, _ = board.DeserialiseMove("A8:B7")
+	// 	err = boardState.MakeMove(move)
+	// 	assertSuccess(test, err)
 
-		test.Log(board.MoveListToString(boardState.GetLegalMoves()))
-		test.Log(boardState.String())
-	})
+	// 	test.Log(board.MoveListToString(boardState.GetLegalMoves()))
+	// 	test.Log(boardState.String())
+	// })
 
 	test.Run("test random legal moves from start position", func(test *testing.T) {
 		boardState := board.NewBoard()
@@ -443,7 +473,10 @@ func Test_legal_moves(test *testing.T) {
 
 		previousFen := boardState.Fen()
 		previousMove := board.Move{}
-		for i := range 1000 {
+		drawCount := 0
+		bWinCount := 0
+		wWinCount := 0
+		for i := range 10000 {
 			fen := boardState.Fen()
 			moves := boardState.GetLegalMoves()
 			move := moves[rand.IntN(len(moves))]
@@ -460,11 +493,24 @@ func Test_legal_moves(test *testing.T) {
 			previousFen = fen
 
 			win := boardState.HasWinner()
-			if win == board.BlackWin || win == board.WhiteWin {
+			if win != board.NoWin {
 				test.Logf("winner was found resetting board after %d moves", i)
 				boardState = board.NewBoard()
 				err := boardState.Init()
 				assertSuccess(test, err)
+
+				whoseMove = board.None
+
+				switch win {
+				case board.WhiteWin:
+					wWinCount += 1
+				case board.BlackWin:
+					bWinCount += 1
+				case board.MoveRuleDraw:
+					fallthrough
+				case board.Stalemate:
+					drawCount += 1
+				}
 			}
 
 			newMove := boardState.WhoseMove()
@@ -474,6 +520,10 @@ func Test_legal_moves(test *testing.T) {
 			}
 			whoseMove = newMove
 		}
+
+		// logging
+		// test.Fatalf("white wins: %d, black wins: %d, draws: %d",
+		// 	wWinCount, bWinCount, drawCount)
 	})
 }
 

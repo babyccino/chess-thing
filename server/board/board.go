@@ -222,7 +222,10 @@ func (board *BoardState) SetSquare(pos Position, piece Piece) {
 }
 
 func (piece Piece) arrIndex() int {
-	return int(NotClear&piece) * (1 + int(piece.PieceType()) + int(6*piece.Colour()))
+	if piece.IsClear() {
+		return 0
+	}
+	return 1 + int(piece.PieceType()) + int(6*(piece.Colour()-1))
 }
 
 var pieceToStrArr = [...]rune{
@@ -249,7 +252,7 @@ func (piece Piece) String() string {
 }
 func (piece Piece) StringDebug() string {
 	pieceChar := piece.String()
-	if piece == Clear {
+	if piece.IsClear() {
 		return pieceChar
 	} else if piece.IsBlack() {
 		return "black " + pieceChar
@@ -390,7 +393,7 @@ func ParseFen(fen string) (*BoardState, error) {
 			return nil, fmt.Errorf("unexpected character found: %s ", string(char))
 		}
 
-		if piece == Clear {
+		if piece.IsPieceAndColour(Clear) {
 			if stateIndex%8 != 0 || rowIndex != 8 {
 				errorStr := fmt.Sprintf("/ found in wrong place stateIndex: %d, rowIndex: %d",
 					stateIndex, rowIndex)
@@ -400,16 +403,37 @@ func ParseFen(fen string) (*BoardState, error) {
 			rowIndex = 0
 			continue
 		} else {
-			if piece == WKing && wKing {
+			if piece.IsPieceAndColour(WKing) && wKing {
 				return nil, errors.New("multiple white kings")
 			}
-			wKing = wKing || piece == WKing
+			wKing = wKing || piece.IsPieceAndColour(WKing)
 
-			if piece == BKing && bKing {
+			if piece.IsPieceAndColour(BKing) && bKing {
 				return nil, errors.New("multiple black kings")
 			}
-			bKing = bKing || piece == BKing
+			bKing = bKing || piece.IsPieceAndColour(BKing)
 
+			if piece.IsPieceAndColour(WPawn) {
+				if !(stateIndex == 3 ||
+					stateIndex == 4 ||
+					stateIndex == 11 ||
+					stateIndex == 18 ||
+					stateIndex == 24 ||
+					stateIndex == 25 ||
+					stateIndex == 32) {
+					piece |= MovedMask
+				}
+			} else if piece.IsPieceAndColour(BPawn) {
+				if !(stateIndex == 31 ||
+					stateIndex == 38 ||
+					stateIndex == 39 ||
+					stateIndex == 45 ||
+					stateIndex == 52 ||
+					stateIndex == 59 ||
+					stateIndex == 60) {
+					piece |= MovedMask
+				}
+			}
 			state[stateIndex] = piece
 		}
 
@@ -463,11 +487,11 @@ func ParseFen(fen string) (*BoardState, error) {
 
 func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position, err error) {
 	for i, piece := range board.State {
-		if piece == WKing {
+		if piece.IsPieceAndColour(WKing) {
 			newKing := IndexToPosition(i)
 			wKing = &newKing
 		}
-		if piece == BKing {
+		if piece.IsPieceAndColour(BKing) {
 			newKing := IndexToPosition(i)
 			bKing = &newKing
 		}
@@ -550,9 +574,9 @@ func AmBeingAttacked(
 	}
 
 	diff := king.Diff(piecePosition)
-	if piece == BPawn {
+	if piece.IsPieceAndColour(BPawn) {
 		return colour == White && (diff == UpVec || diff == LeftVec)
-	} else if piece == WPawn {
+	} else if piece.IsPieceAndColour(WPawn) {
 		return colour == Black && (diff == DownVec || diff == RightVec)
 	} else if diagonal {
 		return piece.IsDiagonalAttacker()
@@ -566,7 +590,7 @@ func CanPieceDoMove(
 	fromPiece, toPiece Piece,
 	diagonal bool,
 ) bool {
-	if fromPiece == Clear {
+	if fromPiece.IsClear() {
 		return false
 	}
 
@@ -722,7 +746,13 @@ func (board *BoardState) attackDirection(colour Colour, start, vec Position) {
 
 		piece := board.GetSquare(start)
 		board.SetSquare(start, piece.Attacked(colour))
-		if !piece.IsClear() {
+		var otherKing Piece
+		if colour == White {
+			otherKing = BKing
+		} else {
+			otherKing = WKing
+		}
+		if !piece.IsPieceAndColour(otherKing) {
 			return
 		}
 	}
@@ -804,11 +834,10 @@ func (board *BoardState) Move(start, end Position) (bool, error) {
 	endPiece := board.GetSquare(end)
 	startPiece := board.GetSquare(start)
 
-	board.SetSquare(end, startPiece)
+	board.SetSquare(end, startPiece.Moved())
 	board.SetSquare(start, Clear)
 
-	captured := (!startPiece.IsClear() && !endPiece.IsClear()) &&
-		(startPiece.Colour() != endPiece.Colour())
+	captured := !endPiece.IsClear() && (startPiece.Colour() != endPiece.Colour())
 	return captured, nil
 }
 

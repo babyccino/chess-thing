@@ -21,8 +21,8 @@ func oppositeColour(colour Colour) Colour {
 }
 
 /*
-check_square attacked pinned piece colour clear
-0            01       100    011   0      1
+moved check_square attacked pinned piece colour
+1     0            01       100    011   01
 
 if there is a white piece on a square and it white attacked then that piece is defended
 i.e. cannot be taken by the black king
@@ -32,29 +32,27 @@ this includes the square the checking piece is on,
 so the check is resolved by the piece being captured
 or moving to a blocking square. This also allows the king to capture
 the piece as that square is not necessarily also _attacked_
+
+moved is to check whether pawns are on their initial squares
+this is needed because the rear flank pawns can end up on the starting squares
+of the two pawns in front of them
 */
 
-// clear (no piece on that square) = 0b0
 const (
-	Clear    Piece = 0b0
-	NotClear       = 0b1
+	ColourMask   Piece = 0b000000000011
+	PieceMask          = 0b000000011100
+	PinMask            = 0b000011100000
+	AttackedMask       = 0b001100000000
+	CheckMask          = 0b010000000000
+	MovedMask          = 0b100000000000
 )
 
 const (
-	ClearMask    Piece = 0b00000000001
-	ColourMask         = 0b00000000010
-	PieceMask          = 0b00000011100
-	PinMask            = 0b00011100000
-	AttackedMask       = 0b01100000000
-	CheckMask          = 0b10000000000
-)
-
-const (
-	ColourShift   uint8 = 1
-	PieceShift          = 2
+	PieceShift    uint8 = 2
 	PinShift            = 5
 	AttackedShift       = 8
 	CheckShift          = 10
+	MovedShift          = 11
 )
 
 type PinDirection = uint8
@@ -85,9 +83,9 @@ func PinToString(pin PinDirection) string {
 }
 
 const (
-	White Colour = iota
+	None Colour = iota
+	White
 	Black
-	None
 	Both
 )
 
@@ -103,9 +101,6 @@ const (
 )
 
 const (
-	shiftedWhite = Piece(White) << ColourShift
-	shiftedBlack = Piece(Black) << ColourShift
-
 	shiftedKing   = Piece(King) << PieceShift
 	shiftedQueen  = Piece(Queen) << PieceShift
 	shiftedBishop = Piece(Bishop) << PieceShift
@@ -115,28 +110,29 @@ const (
 )
 
 const (
-	WKing   Piece = NotClear | shiftedKing | shiftedWhite
-	WQueen        = NotClear | shiftedQueen | shiftedWhite
-	WBishop       = NotClear | shiftedBishop | shiftedWhite
-	WKnight       = NotClear | shiftedKnight | shiftedWhite
-	WPawn         = NotClear | shiftedPawn | shiftedWhite
-	WRook         = NotClear | shiftedRook | shiftedWhite
-	BKing         = NotClear | shiftedKing | shiftedBlack
-	BQueen        = NotClear | shiftedQueen | shiftedBlack
-	BBishop       = NotClear | shiftedBishop | shiftedBlack
-	BKnight       = NotClear | shiftedKnight | shiftedBlack
-	BPawn         = NotClear | shiftedPawn | shiftedBlack
-	BRook         = NotClear | shiftedRook | shiftedBlack
+	Clear   Piece = 0
+	WKing         = shiftedKing | Piece(White)
+	WQueen        = shiftedQueen | Piece(White)
+	WBishop       = shiftedBishop | Piece(White)
+	WKnight       = shiftedKnight | Piece(White)
+	WPawn         = shiftedPawn | Piece(White)
+	WRook         = shiftedRook | Piece(White)
+	BKing         = shiftedKing | Piece(Black)
+	BQueen        = shiftedQueen | Piece(Black)
+	BBishop       = shiftedBishop | Piece(Black)
+	BKnight       = shiftedKnight | Piece(Black)
+	BPawn         = shiftedPawn | Piece(Black)
+	BRook         = shiftedRook | Piece(Black)
 )
 
 func (piece Piece) Colour() Colour {
-	return Colour((piece & ColourMask) >> ColourShift)
+	return Colour(piece & ColourMask)
 }
 func (piece Piece) Is(other PieceType) bool {
-	return piece.PieceType() == other
+	return !piece.IsClear() && piece.PieceType() == other
 }
 
-const pieceAndColourMask = ClearMask | ColourMask | PieceMask
+const pieceAndColourMask = ColourMask | PieceMask
 
 func (piece Piece) IsPieceAndColour(other Piece) bool {
 	return piece&pieceAndColourMask == other&pieceAndColourMask
@@ -148,7 +144,7 @@ func (piece Piece) IsBlack() bool {
 	return piece.Colour() == Black
 }
 func (piece Piece) IsClear() bool {
-	return piece&ClearMask == Clear
+	return piece&ColourMask == Clear
 }
 func (piece Piece) PieceType() PieceType {
 	return PieceType((piece & PieceMask) >> PieceShift)
@@ -187,8 +183,15 @@ func (piece Piece) CheckSquare() Piece {
 	return piece | CheckMask
 }
 
+func (piece Piece) Moved() Piece {
+	return piece | MovedMask
+}
+func (piece Piece) IsMoved() bool {
+	return piece&MovedMask == MovedMask
+}
+
 func (piece Piece) Reset() Piece {
-	return piece & (ColourMask | PieceMask | ClearMask)
+	return piece & (ColourMask | PieceMask | MovedMask)
 }
 
 func directionToPinDirection(dir Direction) PinDirection {
