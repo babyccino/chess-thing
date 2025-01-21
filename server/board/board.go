@@ -594,12 +594,12 @@ func CanPieceDoMove(
 		return false
 	}
 
-	diff := to.Diff(from)
 	toPieceColour := toPiece.Colour()
-
 	if fromPiece.IsPieceAndColour(BPawn) {
+		diff := to.Diff(from)
 		return toPieceColour == White && (diff == UpVec || diff == LeftVec)
 	} else if fromPiece.IsPieceAndColour(WPawn) {
+		diff := to.Diff(from)
 		return toPieceColour == Black && (diff == DownVec || diff == RightVec)
 	} else if diagonal {
 		return fromPiece.IsDiagonalAttacker()

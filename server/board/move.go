@@ -253,13 +253,14 @@ func (moveMaker *LegalMoveCreator) getLegalMovesCheckImpl(to Position, toPiece P
 		return
 	}
 
-	if !isPiecePinnedInDirection(fromPiece, dir) && CanPieceDoMove(
-		from,
-		to,
-		fromPiece,
-		toPiece,
-		diagonal,
-	) {
+	if !isPiecePinnedInDirection(fromPiece, dir) &&
+		CanPieceDoMove(
+			from,
+			to,
+			fromPiece,
+			toPiece,
+			diagonal,
+		) {
 		moveMaker.moves = append(moveMaker.moves, Move{from, to})
 	}
 }
