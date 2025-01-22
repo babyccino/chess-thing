@@ -322,11 +322,16 @@ func Test_legal_moves(test *testing.T) {
 			[]string{"H1:G1"},
 		)
 
-		_ = legalMovesHelper(
+		hi := legalMovesHelper(
 			test,
 			"k6R/pp6/8/8/8/1r6/8/7K w 0",
 			[]string{},
 		)
+		winner := hi.HasWinner()
+		if winner != board.BlackWin {
+			test.Fatalf("expected black winner\nreceived: %d",
+				winner)
+		}
 
 		// x-ray attack on king
 		legalMovesHelper(
