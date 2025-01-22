@@ -206,7 +206,7 @@ func (session *Session) CreateConnectEvent(colour board.Colour) Event {
 			Fen:         fen,
 			MoveHistory: moveList(session.board.MoveHistory),
 			Colour:      serialiseColour(colour),
-			LegalMoves:  moveList(session.board.GetLegalMoves()),
+			LegalMoves:  moveList(session.board.LegalMoves),
 		}
 	}
 }

@@ -126,8 +126,7 @@ func (board *BoardState) Init() error {
 		return err
 	}
 
-	board.UpdateLegalMoves()
-	return nil
+	return board.UpdateLegalMoves()
 }
 
 func (board *BoardState) MakeMove(move Move) error {
@@ -153,9 +152,7 @@ func (board *BoardState) MakeMove(move Move) error {
 		board.CaptureMoveCounter += 1
 	}
 
-	board.UpdateLegalMoves()
-
-	return nil
+	return board.UpdateLegalMoves()
 }
 
 type WinState = uint8
@@ -519,7 +516,7 @@ func (board *BoardState) CheckKnightChecks(
 
 	for _, vec := range knightDirectionArray {
 		pos, inBounds := wKing.AddInBounds(vec)
-		if inBounds && board.GetSquare(pos) == BKnight {
+		if inBounds && board.GetSquare(pos).IsPieceAndColour(BKnight) {
 			if check != NoCheck {
 				err := fmt.Errorf("weird board state reached, check: %s\n\n%s",
 					CheckToString(check), board.String())
@@ -531,7 +528,7 @@ func (board *BoardState) CheckKnightChecks(
 		}
 
 		pos, inBounds = bKing.AddInBounds(vec)
-		if inBounds && board.GetSquare(pos) == WKnight {
+		if inBounds && board.GetSquare(pos).IsPieceAndColour(WKnight) {
 			if check != NoCheck {
 				err := fmt.Errorf("weird board state reached, check: %s\n\n%s",
 					CheckToString(check), board.String())
@@ -585,29 +582,6 @@ func AmBeingAttacked(
 	}
 }
 
-func CanPieceDoMove(
-	from, to Position,
-	fromPiece, toPiece Piece,
-	dir Direction,
-) bool {
-	diagonal := dir <= UpRight
-	if fromPiece.IsClear() || !pieceAbleToMoveDirection(fromPiece, dir) {
-		return false
-	}
-
-	toPieceColour := toPiece.Colour()
-	if fromPiece.IsPieceAndColour(BPawn) {
-		diff := to.Diff(from)
-		return toPieceColour == White && (diff == UpVec || diff == LeftVec)
-	} else if fromPiece.IsPieceAndColour(WPawn) {
-		diff := to.Diff(from)
-		return toPieceColour == Black && (diff == DownVec || diff == RightVec)
-	} else if diagonal {
-		return fromPiece.IsDiagonalAttacker()
-	} else {
-		return fromPiece.IsStraightLongAttacker()
-	}
-}
 func (board *BoardState) addCheckSquares(
 	from,
 	to *Position,
@@ -863,16 +837,15 @@ func (board *BoardState) MoveStr(start, end string) error {
 	return err
 }
 
-func (board *BoardState) UpdateLegalMoves() {
+func (board *BoardState) UpdateLegalMoves() error {
 	board.LegalMoves = nil
 	moveMaker := newLegalMoveCreator(board)
-	board.LegalMoves = moveMaker.getLegalMoves()
-}
-func (board *BoardState) GetLegalMoves() []Move {
-	if board.LegalMoves == nil {
-		board.UpdateLegalMoves()
+	legalMoves, err := moveMaker.getLegalMoves()
+	if err != nil {
+		return err
 	}
-	return board.LegalMoves
+	board.LegalMoves = legalMoves
+	return nil
 }
 
 type ColourLessCheck = uint8
@@ -895,13 +868,13 @@ func ableToMoveDirection(pin PinDirection, dir Direction) bool {
 	case NoPin:
 		return true
 	case DownRightPin:
-		return dir == DownLeft || dir == UpRight
-	case DownLeftPin:
 		return dir == DownRight || dir == UpLeft
+	case DownLeftPin:
+		return dir == DownLeft || dir == UpRight
 	case DownPin:
-		return dir == Left || dir == Right
-	case RightPin:
 		return dir == Up || dir == Down
+	case RightPin:
+		return dir == Left || dir == Right
 	}
 	return true
 }

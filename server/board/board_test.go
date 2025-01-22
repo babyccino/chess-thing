@@ -237,7 +237,7 @@ func helperFromBoardInner(
 		)
 	}
 
-	moves := boardState.GetLegalMoves()
+	moves := boardState.LegalMoves
 
 	moveSet := utility.NewSet[board.Move]()
 	for _, move := range moves {
@@ -281,7 +281,7 @@ func findIllegalMove(
 	assertSuccess(test, err)
 
 	err = boardState.Init()
-	moves := boardState.GetLegalMoves()
+	moves := boardState.LegalMoves
 
 	parsedMove, err := board.DeserialiseMove(illegalMove)
 	assertSuccess(test, err)
@@ -375,6 +375,8 @@ func Test_legal_moves(test *testing.T) {
 
 		// pinned piece
 		findIllegalMove(test, "kq3R2/r2p4/1rR2P2/p1n5/3bp1B1/2p2P2/2p1P3/3P3K w 84", "G1:A7")
+
+		findIllegalMove(test, "k5b1/qB2P3/4p1p1/2P2p1P/6PR/2p5/1B6/R1n4K w 70", "H2:G2")
 		//
 
 		// starting position
@@ -449,33 +451,9 @@ func Test_legal_moves(test *testing.T) {
 		//
 	})
 
-	// test.Run("regression cases", func(test *testing.T) {
-	// 	// todo doesn't work
-	// 	boardState, err := board.ParseFen("1rb5/5N2/1Q1P2p1/ppk4P/p2R1n2/1P5n/2B1PN1R/4P2K w 92")
-	// 	assertSuccess(test, err)
-	// 	err = boardState.Init()
-
-	// 	legalMoves := boardState.GetLegalMoves()
-	// 	test.Log(board.MoveListToString(legalMoves))
-	// 	test.Log("\n" + boardState.String())
-
-	// 	move, _ := board.DeserialiseMove("F4:E5")
-	// 	err = boardState.MakeMove(move)
-	// 	assertSuccess(test, err)
-
-	// 	test.Log(board.MoveListToString(boardState.GetLegalMoves()))
-	// 	test.Log("\n" + boardState.String())
-
-	// 	move, _ = board.DeserialiseMove("A8:B7")
-	// 	err = boardState.MakeMove(move)
-	// 	assertSuccess(test, err)
-
-	// 	test.Log(board.MoveListToString(boardState.GetLegalMoves()))
-	// 	test.Log(boardState.String())
-	// })
-
 	test.Run("test random legal moves from start position", func(test *testing.T) {
 		boardState := board.NewBoard()
+
 		err := boardState.Init()
 		assertSuccess(test, err)
 
@@ -484,26 +462,48 @@ func Test_legal_moves(test *testing.T) {
 			test.Fatalf("expected white\nreceived: %s", board.ColourString(whoseMove))
 		}
 
-		previousFen := boardState.Fen()
+		previousState := boardState.String()
+		previousLegalMoves := board.MoveListToString(boardState.LegalMoves)
 		previousMove := board.Move{}
 		drawCount := 0
 		bWinCount := 0
 		wWinCount := 0
-		for i := range 10000 {
-			fen := boardState.Fen()
-			moves := boardState.GetLegalMoves()
+		for i := range 100000 {
+			state := boardState.String()
+			moves := boardState.LegalMoves
 			move := moves[rand.IntN(len(moves))]
 
+			legalMovesStr := board.MoveListToString(moves)
+
+			// todo show board image instead of fen
 			err := boardState.MakeMove(move)
 			if err != nil {
+				afterErr := boardState.String()
 				test.Fatalf(
-					"err: %v\nboard failed making move: %s, from: %s\nafter %d moves\nprevious move: %s, previous state: %s",
-					err, move.Serialise(), fen, i, previousMove.Serialise(), previousFen,
+					`err: %v
+fen: %s
+board failed making move %s then %s after %d moves
+prev move list: %s
+then move list: %s
+%s
+%s
+%s`,
+					err,
+					boardState.Fen(),
+					previousMove.Serialise(),
+					move.Serialise(),
+					i,
+					previousLegalMoves,
+					legalMovesStr,
+					previousState,
+					state,
+					afterErr,
 				)
 			}
 
 			previousMove = move
-			previousFen = fen
+			previousState = state
+			previousLegalMoves = legalMovesStr
 
 			win := boardState.HasWinner()
 			if win != board.NoWin {

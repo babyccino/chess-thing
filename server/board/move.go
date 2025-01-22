@@ -59,6 +59,31 @@ func SerialiseMoveList(moveList []Move) []string {
 	return ret
 }
 
+func CanPieceDoMove(
+	from, to Position,
+	fromPiece, toPiece Piece,
+	dir Direction,
+) bool {
+	diagonal := dir <= UpRight
+	if fromPiece.IsClear() || !pieceAbleToMoveDirection(fromPiece, dir) {
+		return false
+	}
+
+	// todo long pawn moves
+	toPieceColour := toPiece.Colour()
+	if fromPiece.IsPieceAndColour(BPawn) {
+		diff := to.Diff(from)
+		return toPieceColour == White && (diff == UpVec || diff == LeftVec)
+	} else if fromPiece.IsPieceAndColour(WPawn) {
+		diff := to.Diff(from)
+		return toPieceColour == Black && (diff == DownVec || diff == RightVec)
+	} else if diagonal {
+		return fromPiece.IsDiagonalAttacker()
+	} else {
+		return fromPiece.IsStraightLongAttacker()
+	}
+}
+
 type LegalMoveCreator struct {
 	moves        []Move
 	colour       Colour
@@ -85,10 +110,10 @@ func (moveMaker *LegalMoveCreator) addMove(from, to Position) {
 	moveMaker.moves = append(moveMaker.moves, Move{from, to})
 }
 
-func (moveMaker *LegalMoveCreator) addKnightMoves(piece Piece, from Position) {
+func (moveMaker *LegalMoveCreator) addKnightMoves(piece Piece, from Position) error {
 	pin := piece.GetPin()
 	if pin != NoPin {
-		return
+		return nil
 	}
 	for dir := Knight1; dir <= Knight8; dir += 1 {
 		to, inBounds := from.AddInBounds(directionToVec(dir))
@@ -97,10 +122,18 @@ func (moveMaker *LegalMoveCreator) addKnightMoves(piece Piece, from Position) {
 		}
 
 		toPiece := moveMaker.state.GetSquare(to)
-		if toPiece.IsClear() || toPiece.Colour() != moveMaker.colour {
+		if toPiece.IsClear() {
+			moveMaker.addMove(from, to)
+			continue
+		}
+		if toPiece.Colour() != moveMaker.colour {
+			if toPiece.Is(King) {
+				return errors.New("move to king found")
+			}
 			moveMaker.addMove(from, to)
 		}
 	}
+	return nil
 }
 
 func (moveMaker *LegalMoveCreator) addPawnMoveLong(piece Piece, from Position, dir Direction) {
@@ -134,53 +167,78 @@ func (moveMaker *LegalMoveCreator) addPawnMoveLong(piece Piece, from Position, d
 		moveMaker.addMove(from, to)
 	}
 }
-func (moveMaker *LegalMoveCreator) addPawnMoveStraight(piece Piece, from Position, dir Direction) {
+func (moveMaker *LegalMoveCreator) addPawnMoveStraight(piece Piece, from Position, dir Direction) error {
 	pin := piece.GetPin()
 	if !ableToMoveDirection(pin, dir) {
-		return
+		return nil
 	}
 
 	to, inBounds := from.AddInBounds(directionToVec(dir))
 	if !inBounds {
-		return
+		return nil
 	}
 
 	toPiece := moveMaker.state.GetSquare(to)
 	if !toPiece.IsClear() && toPiece.Colour() != moveMaker.colour {
+		if toPiece.Is(King) {
+			return errors.New("move to king found")
+		}
 		moveMaker.addMove(from, to)
 	}
+	return nil
 }
-func (moveMaker *LegalMoveCreator) addPawnMoves(piece Piece, from Position) {
+func (moveMaker *LegalMoveCreator) addPawnMoves(piece Piece, from Position) error {
 	if piece.Colour() == White {
-		moveMaker.addPawnMoveStraight(piece, from, Down)
+		err := moveMaker.addPawnMoveStraight(piece, from, Down)
+		if err != nil {
+			return err
+		}
+		err = moveMaker.addPawnMoveStraight(piece, from, Right)
+		if err != nil {
+			return err
+		}
 		moveMaker.addPawnMoveLong(piece, from, DownRight)
-		moveMaker.addPawnMoveStraight(piece, from, Right)
 	} else {
-		moveMaker.addPawnMoveStraight(piece, from, Up)
+		err := moveMaker.addPawnMoveStraight(piece, from, Up)
+		if err != nil {
+			return err
+		}
+		err = moveMaker.addPawnMoveStraight(piece, from, Left)
+		if err != nil {
+			return err
+		}
 		moveMaker.addPawnMoveLong(piece, from, UpLeft)
-		moveMaker.addPawnMoveStraight(piece, from, Left)
 	}
+	return nil
 }
 
-func (moveMaker *LegalMoveCreator) addMoveKing(from Position, dir Direction) {
+func (moveMaker *LegalMoveCreator) addMoveKing(from Position, dir Direction) error {
 	to, inBounds := from.AddInBounds(directionToVec(dir))
 	if !inBounds {
-		return
+		return nil
 	}
 	toPiece := moveMaker.state.GetSquare(to)
+	if toPiece.Is(King) {
+		return errors.New("move to king found")
+	}
 	if (toPiece.IsClear() || toPiece.Colour() != moveMaker.colour) && !toPiece.IsAttacked() {
 		moveMaker.addMove(from, to)
 	}
+	return nil
 }
-func (moveMaker *LegalMoveCreator) addKingMoves(from Position) {
+func (moveMaker *LegalMoveCreator) addKingMoves(from Position) error {
 	for dir := range Knight1 {
-		moveMaker.addMoveKing(from, dir)
+		err := moveMaker.addMoveKing(from, dir)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
-func (moveMaker *LegalMoveCreator) addMovesInDirection(piece Piece, from Position, dir Direction) {
+func (moveMaker *LegalMoveCreator) addMovesInDirection(piece Piece, from Position, dir Direction) error {
 	pin := piece.GetPin()
 	if !ableToMoveDirection(pin, dir) {
-		return
+		return nil
 	}
 
 	to := from
@@ -189,7 +247,7 @@ func (moveMaker *LegalMoveCreator) addMovesInDirection(piece Piece, from Positio
 		var inBounds bool
 		to, inBounds = to.AddInBounds(dirVec)
 		if !inBounds {
-			return
+			return nil
 		}
 
 		toPiece := moveMaker.state.GetSquare(to)
@@ -197,14 +255,17 @@ func (moveMaker *LegalMoveCreator) addMovesInDirection(piece Piece, from Positio
 			moveMaker.addMove(from, to)
 		} else {
 			if toPiece.Colour() != moveMaker.colour {
+				if toPiece.Is(King) {
+					return errors.New("move to king found")
+				}
 				moveMaker.addMove(from, to)
 			}
-			return
+			return nil
 		}
 	}
 }
 
-func (moveMaker *LegalMoveCreator) getLegalMovesNoCheck() {
+func (moveMaker *LegalMoveCreator) getLegalMovesNoCheck() error {
 	for index, piece := range moveMaker.state.State {
 		if piece.IsClear() || piece.Colour() != moveMaker.colour {
 			continue
@@ -213,32 +274,48 @@ func (moveMaker *LegalMoveCreator) getLegalMovesNoCheck() {
 		from := IndexToPosition(index)
 
 		if piece.Is(King) {
-			moveMaker.addKingMoves(from)
+			err := moveMaker.addKingMoves(from)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 
 		if piece.Is(Knight) {
-			moveMaker.addKnightMoves(piece, from)
+			err := moveMaker.addKnightMoves(piece, from)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 
 		if piece.Is(Pawn) {
-			moveMaker.addPawnMoves(piece, from)
+			err := moveMaker.addPawnMoves(piece, from)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 
 		if piece.IsDiagonalAttacker() {
 			for dir := Direction(0); dir <= UpRight; dir += 1 {
-				moveMaker.addMovesInDirection(piece, from, dir)
+				err := moveMaker.addMovesInDirection(piece, from, dir)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
 		if piece.IsStraightLongAttacker() {
 			for dir := Up; dir <= Right; dir += 1 {
-				moveMaker.addMovesInDirection(piece, from, dir)
+				err := moveMaker.addMovesInDirection(piece, from, dir)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
+	return nil
 }
 
 func (moveMaker *LegalMoveCreator) getLegalMovesCheckImpl(to Position, toPiece Piece, dir Direction) {
@@ -306,14 +383,17 @@ func (moveMaker *LegalMoveCreator) getLegalKingMoves() {
 	}
 }
 
-func (moveMaker *LegalMoveCreator) getLegalMoves() []Move {
+func (moveMaker *LegalMoveCreator) getLegalMoves() ([]Move, error) {
 	switch moveMaker.check {
 	case colourLessNoCheck:
-		moveMaker.getLegalMovesNoCheck()
+		err := moveMaker.getLegalMovesNoCheck()
+		if err != nil {
+			return nil, err
+		}
 	case colourLessCheck:
 		moveMaker.getLegalMovesCheck()
 	case colourLessDoubleCheck:
 		moveMaker.getLegalKingMoves()
 	}
-	return moveMaker.moves
+	return moveMaker.moves, nil
 }
