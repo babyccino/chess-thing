@@ -168,7 +168,7 @@ func (moveMaker *LegalMoveCreator) addMoveKing(from Position, dir Direction) {
 		return
 	}
 	toPiece := moveMaker.state.GetSquare(to)
-	if (toPiece.IsClear() || toPiece.Colour() != moveMaker.colour) && !toPiece.IsAttacked(moveMaker.colour) {
+	if (toPiece.IsClear() || toPiece.Colour() != moveMaker.colour) && !toPiece.IsAttacked() {
 		moveMaker.addMove(from, to)
 	}
 }

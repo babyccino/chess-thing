@@ -727,13 +727,13 @@ func (board *BoardState) UpdateCheckState() error {
 	return nil
 }
 
-func (board *BoardState) attackSquare(colour Colour, start, vec Position) {
+func (board *BoardState) attackSquare(start, vec Position) {
 	moved, bounds := start.AddInBounds(vec)
 	if !bounds {
 		return
 	}
 	piece := board.GetSquare(moved)
-	board.SetSquare(moved, piece.Attacked(colour))
+	board.SetSquare(moved, piece.Attacked())
 }
 
 func (board *BoardState) attackDirection(colour Colour, start, vec Position) {
@@ -745,14 +745,9 @@ func (board *BoardState) attackDirection(colour Colour, start, vec Position) {
 		}
 
 		piece := board.GetSquare(start)
-		board.SetSquare(start, piece.Attacked(colour))
-		var otherKing Piece
-		if colour == White {
-			otherKing = BKing
-		} else {
-			otherKing = WKing
-		}
-		if !piece.IsPieceAndColour(otherKing) {
+		board.SetSquare(start, piece.Attacked())
+
+		if !piece.IsClear() && (piece.Colour() == colour || !piece.Is(King)) {
 			return
 		}
 	}
@@ -764,47 +759,50 @@ func (board *BoardState) ResetPieceStates() {
 	}
 }
 func (board *BoardState) UpdateAttackedSquares() {
+	whoseMove := board.WhoseMove()
 	for index, piece := range board.State {
 		pos := IndexToPosition(index)
-		colour := piece.Colour()
+		if piece.IsClear() || piece.Colour() == whoseMove {
+			continue
+		}
 
 		if piece.Is(Knight) {
 			for _, move := range knightDirectionArray {
-				board.attackSquare(colour, pos, move)
+				board.attackSquare(pos, move)
 			}
 			continue
 		}
 
 		if piece.IsPieceAndColour(WPawn) {
-			board.attackSquare(colour, pos, DownVec)
-			board.attackSquare(colour, pos, RightVec)
+			board.attackSquare(pos, DownVec)
+			board.attackSquare(pos, RightVec)
 			continue
 		}
 		if piece.IsPieceAndColour(BPawn) {
-			board.attackSquare(colour, pos, UpVec)
-			board.attackSquare(colour, pos, LeftVec)
+			board.attackSquare(pos, UpVec)
+			board.attackSquare(pos, LeftVec)
 			continue
 		}
 
 		if piece.Is(King) {
 			for _, move := range diagonalDirectionArray {
-				board.attackSquare(colour, pos, move)
+				board.attackSquare(pos, move)
 			}
 			for _, move := range straightDirectionArray {
-				board.attackSquare(colour, pos, move)
+				board.attackSquare(pos, move)
 			}
 			continue
 		}
 
 		if piece.IsDiagonalAttacker() {
 			for _, move := range diagonalDirectionArray {
-				board.attackDirection(colour, pos, move)
+				board.attackDirection(whoseMove, pos, move)
 			}
 		}
 
 		if piece.IsStraightLongAttacker() {
 			for _, move := range straightDirectionArray {
-				board.attackDirection(colour, pos, move)
+				board.attackDirection(whoseMove, pos, move)
 			}
 		}
 	}

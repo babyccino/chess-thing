@@ -39,20 +39,20 @@ of the two pawns in front of them
 */
 
 const (
-	ColourMask   Piece = 0b000000000011
-	PieceMask          = 0b000000011100
-	PinMask            = 0b000011100000
-	AttackedMask       = 0b001100000000
-	CheckMask          = 0b010000000000
-	MovedMask          = 0b100000000000
+	ColourMask   Piece = 0b00000000011
+	PieceMask          = 0b00000011100
+	PinMask            = 0b00011100000
+	AttackedMask       = 0b00100000000
+	CheckMask          = 0b01000000000
+	MovedMask          = 0b10000000000
 )
 
 const (
 	PieceShift    uint8 = 2
 	PinShift            = 5
 	AttackedShift       = 8
-	CheckShift          = 10
-	MovedShift          = 11
+	CheckShift          = 9
+	MovedShift          = 10
 )
 
 type PinDirection = uint8
@@ -166,14 +166,11 @@ func (piece Piece) GetPin() PinDirection {
 	return PinDirection(piece&PinMask) >> PinShift
 }
 
-func (piece Piece) GetAttacked() Colour {
-	return Colour(piece & AttackedMask >> AttackedShift)
+func (piece Piece) IsAttacked() bool {
+	return piece&AttackedMask == AttackedMask
 }
-func (piece Piece) IsAttacked(colour Colour) bool {
-	return piece.GetAttacked() != colour
-}
-func (piece Piece) Attacked(colour Colour) Piece {
-	return piece | (Piece(colour) << AttackedShift)
+func (piece Piece) Attacked() Piece {
+	return piece | AttackedMask
 }
 
 func (piece Piece) IsCheckSquare() bool {
