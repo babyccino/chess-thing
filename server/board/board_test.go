@@ -327,6 +327,13 @@ func Test_legal_moves(test *testing.T) {
 			"k6R/pp6/8/8/8/1r6/8/7K w 0",
 			[]string{},
 		)
+
+		// x-ray attack on king
+		legalMovesHelper(
+			test,
+			"1rb5/5N2/1Q1P2p1/ppk4P/p2R1n2/1P5n/2B1PN1R/4P2K w 92",
+			[]string{"F4:G3"},
+		)
 		//
 
 		// starting position
@@ -397,14 +404,6 @@ func Test_legal_moves(test *testing.T) {
 				"B6:E3",
 				"B6:F2",
 			},
-		)
-		//
-
-		// regression cases
-		legalMovesHelper(
-			test,
-			"1rb5/5N2/1Q1P2p1/ppk4P/p2R1n2/1P5n/2B1PN1R/4P2K w 92",
-			[]string{"F4:G3"},
 		)
 		//
 	})
