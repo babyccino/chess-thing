@@ -368,6 +368,7 @@ func Test_legal_moves(test *testing.T) {
 		assertSuccess(test, err)
 
 		_ = helperFromBoard(
+			test,
 			boardState,
 			[]string{
 				// pawn moves

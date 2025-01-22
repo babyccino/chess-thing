@@ -736,7 +736,7 @@ func (board *BoardState) attackSquare(start, vec Position) {
 	board.SetSquare(moved, piece.Attacked())
 }
 
-func (board *BoardState) attackDirection(colour Colour, start, vec Position) {
+func (board *BoardState) attackDirection(otherKing Piece, start, vec Position) {
 	for {
 		var inBounds bool
 		start, inBounds = start.AddInBounds(vec)
@@ -747,7 +747,9 @@ func (board *BoardState) attackDirection(colour Colour, start, vec Position) {
 		piece := board.GetSquare(start)
 		board.SetSquare(start, piece.Attacked())
 
-		if !piece.IsClear() && (piece.Colour() == colour || !piece.Is(King)) {
+		if piece.IsClear() || piece.IsPieceAndColour(otherKing) {
+			continue
+		} else {
 			return
 		}
 	}
@@ -760,6 +762,14 @@ func (board *BoardState) ResetPieceStates() {
 }
 func (board *BoardState) UpdateAttackedSquares() {
 	whoseMove := board.WhoseMove()
+
+	var king Piece
+	if whoseMove == White {
+		king = WKing
+	} else {
+		king = BKing
+	}
+
 	for index, piece := range board.State {
 		pos := IndexToPosition(index)
 		if piece.IsClear() || piece.Colour() == whoseMove {
@@ -796,13 +806,13 @@ func (board *BoardState) UpdateAttackedSquares() {
 
 		if piece.IsDiagonalAttacker() {
 			for _, move := range diagonalDirectionArray {
-				board.attackDirection(whoseMove, pos, move)
+				board.attackDirection(king, pos, move)
 			}
 		}
 
 		if piece.IsStraightLongAttacker() {
 			for _, move := range straightDirectionArray {
-				board.attackDirection(whoseMove, pos, move)
+				board.attackDirection(king, pos, move)
 			}
 		}
 	}
