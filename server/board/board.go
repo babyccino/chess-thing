@@ -588,9 +588,10 @@ func AmBeingAttacked(
 func CanPieceDoMove(
 	from, to Position,
 	fromPiece, toPiece Piece,
-	diagonal bool,
+	dir Direction,
 ) bool {
-	if fromPiece.IsClear() {
+	diagonal := dir <= UpRight
+	if fromPiece.IsClear() || !pieceAbleToMoveDirection(fromPiece, dir) {
 		return false
 	}
 
@@ -889,8 +890,10 @@ func checkToColourlessCheck(check Check) ColourLessCheck {
 	return check
 }
 
-func isPinnedInDirection(pin PinDirection, dir Direction) bool {
+func ableToMoveDirection(pin PinDirection, dir Direction) bool {
 	switch pin {
+	case NoPin:
+		return true
 	case DownRightPin:
 		return dir == DownLeft || dir == UpRight
 	case DownLeftPin:
@@ -900,15 +903,16 @@ func isPinnedInDirection(pin PinDirection, dir Direction) bool {
 	case RightPin:
 		return dir == Up || dir == Down
 	}
-	return false
+	return true
 }
-func isPiecePinnedInDirection(piece Piece, dir Direction) bool {
+
+func pieceAbleToMoveDirection(piece Piece, dir Direction) bool {
 	pin := piece.GetPin()
 	if pin == NoPin {
-		return false
-	}
-	if piece.Is(Knight) {
 		return true
 	}
-	return isPinnedInDirection(pin, dir)
+	if piece.Is(Knight) {
+		return false
+	}
+	return ableToMoveDirection(pin, dir)
 }

@@ -105,7 +105,7 @@ func (moveMaker *LegalMoveCreator) addKnightMoves(piece Piece, from Position) {
 
 func (moveMaker *LegalMoveCreator) addPawnMoveLong(piece Piece, from Position, dir Direction) {
 	pin := piece.GetPin()
-	if isPinnedInDirection(pin, dir) {
+	if !ableToMoveDirection(pin, dir) {
 		return
 	}
 
@@ -136,7 +136,7 @@ func (moveMaker *LegalMoveCreator) addPawnMoveLong(piece Piece, from Position, d
 }
 func (moveMaker *LegalMoveCreator) addPawnMoveStraight(piece Piece, from Position, dir Direction) {
 	pin := piece.GetPin()
-	if isPinnedInDirection(pin, dir) {
+	if !ableToMoveDirection(pin, dir) {
 		return
 	}
 
@@ -179,9 +179,10 @@ func (moveMaker *LegalMoveCreator) addKingMoves(from Position) {
 }
 func (moveMaker *LegalMoveCreator) addMovesInDirection(piece Piece, from Position, dir Direction) {
 	pin := piece.GetPin()
-	if isPinnedInDirection(pin, dir) {
+	if !ableToMoveDirection(pin, dir) {
 		return
 	}
+
 	to := from
 	dirVec := directionToVec(dir)
 	for {
@@ -241,7 +242,6 @@ func (moveMaker *LegalMoveCreator) getLegalMovesNoCheck() {
 }
 
 func (moveMaker *LegalMoveCreator) getLegalMovesCheckImpl(to Position, toPiece Piece, dir Direction) {
-	diagonal := dir <= UpRight
 	vec := directionArray[dir]
 
 	fromPiece, from := moveMaker.state.FindInDirection(vec, &to)
@@ -253,14 +253,13 @@ func (moveMaker *LegalMoveCreator) getLegalMovesCheckImpl(to Position, toPiece P
 		return
 	}
 
-	if !isPiecePinnedInDirection(fromPiece, dir) &&
-		CanPieceDoMove(
-			from,
-			to,
-			fromPiece,
-			toPiece,
-			diagonal,
-		) {
+	if CanPieceDoMove(
+		from,
+		to,
+		fromPiece,
+		toPiece,
+		dir,
+	) {
 		moveMaker.moves = append(moveMaker.moves, Move{from, to})
 	}
 }
