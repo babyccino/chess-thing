@@ -10,6 +10,7 @@ import (
 
 func Test_piece_functions(test *testing.T) {
 	test.Run("test piece is", func(test *testing.T) {
+		test.Parallel()
 		assertBoolEq(test, true, board.WKing.Is(board.King))
 		assertBoolEq(test, false, board.WKing.Is(board.Queen))
 	})
@@ -17,6 +18,7 @@ func Test_piece_functions(test *testing.T) {
 
 func Test_fen(test *testing.T) {
 	test.Run("test fen creation", func(test *testing.T) {
+		test.Parallel()
 		boardState := board.NewBoard()
 		err := boardState.Init()
 		assertSuccess(test, err)
@@ -36,6 +38,7 @@ func Test_fen(test *testing.T) {
 	})
 
 	test.Run("test test functions", func(test *testing.T) {
+		test.Parallel()
 		boardState1 := board.NewBoard()
 		boardState2 := board.NewBoard()
 
@@ -50,6 +53,7 @@ func Test_fen(test *testing.T) {
 	})
 
 	test.Run("test fen parsing", func(test *testing.T) {
+		test.Parallel()
 		received, err := board.ParseFen("KRBPP3/RQNP4/NBP5/PP5p/P5pp/5pbn/4pnqr/3ppbrk w 0")
 		assertSuccess(test, err)
 		expected := board.NewBoard()
@@ -79,6 +83,7 @@ type PinMap = map[board.Position]board.PinDirection
 
 func Test_check(test *testing.T) {
 	test.Run("test checks", func(test *testing.T) {
+		test.Parallel()
 		helper := func(
 			fen string,
 			endingCheck *board.CheckState,
@@ -301,6 +306,7 @@ func findIllegalMove(
 
 func Test_legal_moves(test *testing.T) {
 	test.Run("test legal moves", func(test *testing.T) {
+		test.Parallel()
 		// king moves
 		_ = legalMovesHelper(
 			test,
@@ -372,6 +378,29 @@ func Test_legal_moves(test *testing.T) {
 			"1rb5/5N2/1Q1P2p1/ppk4P/p2R1n2/1P5n/2B1PN1R/4P2K w 92",
 			[]string{"F4:G3"},
 		)
+
+		//     . ♔ .          1
+		//     .   .          2
+		//                    3
+		//   ♙ ♙              4
+		//   ♙   .            5
+		//       .            6
+		//       ♜            7
+		//                 ♚  8
+		// long pawn move to block check
+		legalMovesHelper(
+			test,
+			"2k5/8/8/pp6/p7/8/2R5/7K w 0",
+			[]string{
+				"F1:G1",
+				"F1:G2",
+				"F1:E1",
+				"F1:E2",
+				"G4:F5",
+				"H4:F6",
+			},
+		)
+		//
 
 		// pinned piece
 		findIllegalMove(test, "kq3R2/r2p4/1rR2P2/p1n5/3bp1B1/2p2P2/2p1P3/3P3K w 84", "G1:A7")
@@ -452,6 +481,7 @@ func Test_legal_moves(test *testing.T) {
 	})
 
 	test.Run("test random legal moves from start position", func(test *testing.T) {
+		test.Parallel()
 		boardState := board.NewBoard()
 
 		err := boardState.Init()

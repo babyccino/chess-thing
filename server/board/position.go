@@ -28,6 +28,9 @@ func (pos *Position) Add(other Position) Position {
 func (pos *Position) AddMult(other Position, mult int8) Position {
 	return Position{pos.X + mult*other.X, pos.Y + mult*other.Y}
 }
+func (pos *Position) Mult(mult int8) Position {
+	return Position{pos.X * mult, pos.Y * mult}
+}
 func (pos *Position) Diff(other Position) Position {
 	return Position{pos.X - other.X, pos.Y - other.Y}
 }
@@ -95,6 +98,13 @@ const (
 	Knight8
 )
 
+func reverseDirection(direction Direction) Direction {
+	if direction <= Right {
+		return Right - direction
+	} else {
+		return direction
+	}
+}
 func isDiagonal(direction Direction) bool {
 	return direction <= UpRight
 }

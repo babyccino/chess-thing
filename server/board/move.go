@@ -69,14 +69,25 @@ func CanPieceDoMove(
 		return false
 	}
 
-	// todo long pawn moves
 	toPieceColour := toPiece.Colour()
 	if fromPiece.IsPieceAndColour(BPawn) {
 		diff := to.Diff(from)
-		return toPieceColour == White && (diff == UpVec || diff == LeftVec)
+		if toPieceColour == White {
+			return diff == DownVec || diff == RightVec
+		} else if toPiece.IsClear() {
+			return diff == DownRightVec || (!fromPiece.IsMoved() && diff == DownRightVec.Mult(2))
+		} else {
+			return false
+		}
 	} else if fromPiece.IsPieceAndColour(WPawn) {
 		diff := to.Diff(from)
-		return toPieceColour == Black && (diff == DownVec || diff == RightVec)
+		if toPieceColour == Black {
+			return diff == DownVec || diff == RightVec
+		} else if toPiece.IsClear() {
+			return diff == DownRightVec || (!fromPiece.IsMoved() && diff == DownRightVec.Mult(2))
+		} else {
+			return false
+		}
 	} else if diagonal {
 		return fromPiece.IsDiagonalAttacker()
 	} else {
@@ -335,7 +346,7 @@ func (moveMaker *LegalMoveCreator) getLegalMovesCheckImpl(to Position, toPiece P
 		to,
 		fromPiece,
 		toPiece,
-		dir,
+		reverseDirection(dir),
 	) {
 		moveMaker.moves = append(moveMaker.moves, Move{from, to})
 	}
