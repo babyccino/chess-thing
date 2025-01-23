@@ -98,12 +98,27 @@ const (
 	Knight8
 )
 
+var reverseDirectionLookup = []Direction{
+	UpLeft,
+	UpRight,
+	DownRight,
+	DownLeft,
+	Down,
+	Up,
+	Right,
+	Left,
+	Knight8,
+	Knight7,
+	Knight6,
+	Knight5,
+	Knight4,
+	Knight3,
+	Knight2,
+	Knight1,
+}
+
 func reverseDirection(direction Direction) Direction {
-	if direction <= Right {
-		return Right - direction
-	} else {
-		return direction
-	}
+	return reverseDirectionLookup[direction]
 }
 func isDiagonal(direction Direction) bool {
 	return direction <= UpRight
