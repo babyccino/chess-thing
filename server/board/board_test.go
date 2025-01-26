@@ -304,6 +304,15 @@ func findIllegalMove(
 	return boardState
 }
 
+const errStr = `err: %v
+fen: %s
+board failed making move %s then %s after %d moves
+prev move list: %s
+then move list: %s
+%s
+%s
+%s`
+
 func Test_legal_moves(test *testing.T) {
 	test.Run("test legal moves", func(test *testing.T) {
 		test.Parallel()
@@ -510,14 +519,7 @@ func Test_legal_moves(test *testing.T) {
 			if err != nil {
 				afterErr := boardState.String()
 				test.Fatalf(
-					`err: %v
-fen: %s
-board failed making move %s then %s after %d moves
-prev move list: %s
-then move list: %s
-%s
-%s
-%s`,
+					errStr,
 					err,
 					boardState.Fen(),
 					previousMove.Serialise(),
