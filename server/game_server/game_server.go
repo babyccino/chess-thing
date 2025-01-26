@@ -44,7 +44,7 @@ type subscriber struct {
 	session     *Session
 }
 
-func NewGameServer() (*GameServer, error) {
+func NewGameServer() *GameServer {
 	server := &GameServer{
 		ServeMux:     http.NewServeMux(),
 		sessions:     make(map[uuid.UUID]*Session),
@@ -53,7 +53,7 @@ func NewGameServer() (*GameServer, error) {
 
 	server.ServeMux.HandleFunc("/subscribe/", server.SubscribeHandler)
 
-	return server, nil
+	return server
 }
 
 func newSession() *Session {
@@ -121,43 +121,6 @@ const (
 	end                     = "end"
 	errorEvent              = "error"
 )
-
-/* TS
-type ConnectEvent = {
-  type: "connect"
-  fen: string
-  moveHistory?: string[]
-  colour: "w" | "b"
-  legalMoves?: string[]
-}
-type ConnectViewerEvent = {
-  type: "connectViewer"
-  fen: string
-  moveHistory?: string[]
-}
-type MoveEvent = {
-  type: "move"
-  move: string
-  fen: string
-  legalMoves?: string[]
-}
-type SendMoveEvent = {
-  type: "sendMove"
-  move: string
-}
-type EndEvent = {
-  type: "end"
-  victor: "w" | "b"
-}
-type ChatEvent = {
-  type: "chat"
-  text: string
-}
-type ErrorEvent = {
-  type: "error"
-  text: string
-}
-*/
 
 type Event struct {
 	Type        eventType `json:"type"`

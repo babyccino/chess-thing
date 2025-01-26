@@ -45,7 +45,7 @@ func newPlayer(conn *websocket.Conn, server *MatchmakingServer) *player {
 	}
 }
 
-func NewMatchmakingServer(gameServer *game_server.GameServer) (*MatchmakingServer, error) {
+func NewMatchmakingServer(gameServer *game_server.GameServer) *MatchmakingServer {
 	serveMux := http.NewServeMux()
 	server := &MatchmakingServer{
 		ServeMux:   serveMux,
@@ -57,7 +57,7 @@ func NewMatchmakingServer(gameServer *game_server.GameServer) (*MatchmakingServe
 	serveMux.HandleFunc("/unranked", server.UnrankedHandler)
 	serveMux.HandleFunc("/unranked/subscribe", server.UnrankedQueueHandler)
 
-	return server, nil
+	return server
 }
 
 func (server *MatchmakingServer) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
