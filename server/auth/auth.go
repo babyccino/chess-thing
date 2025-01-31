@@ -1,12 +1,13 @@
 package auth
 
 import (
+	"chess/model"
 	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -21,10 +22,10 @@ type AuthServer struct {
 	ServeMux     *http.ServeMux
 	oAuth2Config *oauth2.Config
 	stateStore   StateStoreMap
-	db           *sql.DB
+	db           *model.Queries
 }
 
-func NewAuthServer(db *sql.DB) *AuthServer {
+func NewAuthServer(db *model.Queries) *AuthServer {
 	server := &AuthServer{
 		ServeMux: http.NewServeMux(),
 		oAuth2Config: &oauth2.Config{
@@ -42,9 +43,6 @@ func NewAuthServer(db *sql.DB) *AuthServer {
 
 	server.ServeMux.HandleFunc("/login", server.LoginHandler)
 	server.ServeMux.HandleFunc("/callback", server.CallbackHandler)
-	server.ServeMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Welcome! <a href='/login'>Login</a>")
-	})
 
 	return server
 }
@@ -61,14 +59,14 @@ func generateState() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-func (c *AuthServer) LoginHandler(w http.ResponseWriter, r *http.Request) {
+func (server *AuthServer) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	state, err := generateState()
 	if err != nil {
 		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 		return
 	}
 
-	c.stateStore[state] = time.Now()
+	server.stateStore[state] = time.Now()
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
@@ -79,11 +77,44 @@ func (c *AuthServer) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   600, // 10 minutes
 	})
 
-	url := c.oAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOnline)
+	url := server.oAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOnline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
-func (c *AuthServer) CallbackHandler(w http.ResponseWriter, r *http.Request) {
+const (
+	UnsetMaxAge int = -1
+	NoMaxage        = 0
+)
+
+type GoogleUserInfo struct {
+	Sub           string `json:"sub"`            // Unique identifier for the user
+	Name          string `json:"name"`           // Full name of the user
+	GivenName     string `json:"given_name"`     // First name of the user
+	FamilyName    string `json:"family_name"`    // Last name of the user
+	Picture       string `json:"picture"`        // URL of the user's profile picture
+	Email         string `json:"email"`          // User's email address
+	EmailVerified bool   `json:"email_verified"` // Whether the email is verified
+	Locale        string `json:"locale"`         // User's preferred locale
+}
+
+func nullString(str string) sql.NullString {
+	return sql.NullString{String: str, Valid: true}
+}
+
+func makeCookie(name, value string) *http.Cookie {
+	return &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   60 * 60 * 24, // 24 hours
+	}
+}
+
+func (server *AuthServer) CallbackHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	cookie, err := r.Cookie("oauth_state")
 	if err != nil {
 		http.Error(w, "State cookie not found", http.StatusBadRequest)
@@ -95,32 +126,31 @@ func (c *AuthServer) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timestamp, exists := c.stateStore[cookie.Value]
+	timestamp, exists := server.stateStore[cookie.Value]
 	if !exists || time.Since(timestamp) > 10*time.Minute {
 		http.Error(w, "State expired or invalid", http.StatusBadRequest)
-		delete(c.stateStore, cookie.Value)
+		delete(server.stateStore, cookie.Value)
 		return
 	}
-	delete(c.stateStore, cookie.Value)
+	delete(server.stateStore, cookie.Value)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
-		Value:    "",
 		Path:     "/",
-		MaxAge:   -1,
+		MaxAge:   UnsetMaxAge,
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 
 	code := r.URL.Query().Get("code")
-	token, err := c.oAuth2Config.Exchange(context.Background(), code)
+	token, err := server.oAuth2Config.Exchange(context.Background(), code)
 	if err != nil {
 		http.Error(w, "Failed to exchange token", http.StatusInternalServerError)
 		return
 	}
 
-	client := c.oAuth2Config.Client(context.Background(), token)
+	client := server.oAuth2Config.Client(context.Background(), token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
 	if err != nil {
 		http.Error(w, "Failed to get user info", http.StatusInternalServerError)
@@ -128,22 +158,46 @@ func (c *AuthServer) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	var userInfo map[string]interface{}
+	var userInfo GoogleUserInfo
 	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
 		http.Error(w, "Failed to decode user info", http.StatusInternalServerError)
 		return
 	}
 
-	session, _ := json.Marshal(userInfo)
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session",
-		Value:    base64.URLEncoding.EncodeToString(session),
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   3600 * 24, // 24 hours
+	dbUser, err := server.db.GetUserByEmail(ctx, userInfo.Email)
+	if err == sql.ErrNoRows {
+		dbUser, err = server.db.CreateUser(ctx,
+			model.CreateUserParams{
+				Username: nullString(userInfo.Name),
+				Email:    userInfo.Email,
+			})
+	} else if err != nil {
+		slog.Error(
+			"a non sql.ErrNoRows err was returned when getting user by email",
+			slog.Any("error", err),
+		)
+		http.Error(w, "Failed querying db", http.StatusInternalServerError)
+		return
+	}
+
+	dbSession, err := server.db.CreateSession(ctx, model.CreateSessionParams{
+		UserID:       dbUser.ID,
+		AccessToken:  token.AccessToken,
+		RefreshToken: nullString(token.RefreshToken),
+		ExpiresAt:    token.Expiry,
 	})
+	if err != nil {
+		slog.Error(
+			"error creating session",
+			slog.Any("error", err),
+		)
+		http.Error(w, "Failed querying db", http.StatusInternalServerError)
+		return
+	}
+
+	userBytes, _ := json.Marshal(userInfo)
+	http.SetCookie(w, makeCookie("user", base64.URLEncoding.EncodeToString(userBytes)))
+	http.SetCookie(w, makeCookie("session-token", dbSession.ID))
 
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }

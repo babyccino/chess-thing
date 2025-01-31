@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"chess/auth"
 	"chess/game_server"
 	"chess/matchmaking_server"
+	"chess/model"
 
 	"github.com/joho/godotenv"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
@@ -28,10 +30,30 @@ func main() {
 	}
 }
 
-func getEnv() (dbUrl string, dbAuthToken string, err error) {
+type AppEnv = uint8
+
+const (
+	dev AppEnv = iota
+	prod
+)
+
+type Env struct {
+	dbUrl       string
+	dbAuthToken string
+	appEnv      AppEnv
+}
+
+func getEnv() (env *Env, err error) {
 	dbUrl, dbUrlExists := os.LookupEnv("LIB_SQL_DB_URL")
 	dbAuthToken, dbAuthTokenExists := os.LookupEnv("LIB_SQL_AUTH_TOKEN")
-	if !dbUrlExists || !dbAuthTokenExists {
+	appEnvStr, appEnvExists := os.LookupEnv("APP_ENV")
+
+	appEnv := dev
+	if appEnvExists && appEnvStr == "prod" {
+		appEnv = prod
+	}
+
+	if appEnv == prod && (!dbUrlExists || !dbAuthTokenExists) {
 		err := godotenv.Load("./.env")
 		if err != nil {
 			log.Fatal("env variables not found and .env file not found")
@@ -40,11 +62,11 @@ func getEnv() (dbUrl string, dbAuthToken string, err error) {
 		dbUrl, dbUrlExists = os.LookupEnv("LIB_SQL_DB_URL")
 		dbAuthToken, dbAuthTokenExists = os.LookupEnv("LIB_SQL_AUTH_TOKEN")
 		if !dbUrlExists || !dbAuthTokenExists {
-			return "", "", errors.New("env variables not found in .env file")
+			return nil, errors.New("env variables not found in .env file")
 		}
 	}
 
-	return dbUrl, dbAuthToken, nil
+	return &Env{dbUrl, dbAuthToken, appEnv}, nil
 }
 
 func getAddr() string {
@@ -59,6 +81,27 @@ type MiddlewareServer struct {
 	ServeMux *http.ServeMux
 }
 
+//go:embed schema.sql
+var ddl string
+
+func getDb(ctx context.Context, env *Env) (*sql.DB, error) {
+	if env.appEnv == dev {
+		db, err := sql.Open("sqlite", ":memory:")
+
+		if err != nil {
+			return nil, err
+		}
+
+		db.ExecContext(ctx, ddl)
+		return db, err
+	} else {
+		return sql.Open(
+			"libsql",
+			fmt.Sprintf("%s?authToken=%s", env.dbUrl, env.dbAuthToken),
+		)
+	}
+}
+
 const CorsHeader = "Access-Control-Allow-Origin"
 const AllowAll = "*"
 
@@ -70,21 +113,25 @@ func (server *MiddlewareServer) ServeHTTP(writer http.ResponseWriter, req *http.
 // run initializes the chatServer and then
 // starts a http.Server for the passed in address.
 func run() error {
-	dbUrl, dbAuthToken, err := getEnv()
+	ctx := context.Background()
+
+	env, err := getEnv()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[fatal-error] %s", err)
 		os.Exit(1)
 	}
 
-	db, err := sql.Open("libsql", fmt.Sprintf("%s?authToken=%s", dbUrl, dbAuthToken))
+	db, err := getDb(ctx, env)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[fatal-error] failed to open db %s: %s", dbUrl, err)
+		fmt.Fprintf(os.Stderr, "[fatal-error] failed to open db %s: %s", env.dbUrl, err)
 		os.Exit(1)
 	}
 
+	queries := model.New(db)
+
 	gameServer := game_server.NewGameServer()
 	matchmakingServer := matchmaking_server.NewMatchmakingServer(gameServer)
-	authServer := auth.NewAuthServer(db)
+	authServer := auth.NewAuthServer(queries)
 
 	mux := http.NewServeMux()
 	mux.Handle("/game/", http.StripPrefix("/game", gameServer))
