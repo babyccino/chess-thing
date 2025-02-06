@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"chess/env"
 	"chess/model"
 	"context"
 	"crypto/rand"
@@ -9,7 +10,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -25,13 +25,13 @@ type AuthServer struct {
 	db           *model.Queries
 }
 
-func NewAuthServer(db *model.Queries) *AuthServer {
+func NewAuthServer(db *model.Queries, environment *env.Env) *AuthServer {
 	server := &AuthServer{
 		ServeMux: http.NewServeMux(),
 		oAuth2Config: &oauth2.Config{
-			ClientID:     os.Getenv("OAUTH_CLIENT_ID"),
-			ClientSecret: os.Getenv("OAUTH_CLIENT_SECRET"),
-			RedirectURL:  "http://localhost:8080/callback",
+			ClientID:     environment.OauthClientId,
+			ClientSecret: environment.OauthClientSecret,
+			RedirectURL:  "http://localhost:3000/auth/callback",
 			Scopes: []string{
 				"https://www.googleapis.com/auth/userinfo.email",
 				"https://www.googleapis.com/auth/userinfo.profile",
