@@ -1,8 +1,11 @@
 package matchmaking_server
 
 import (
+	"chess/auth"
 	"chess/game_server"
+	"chess/model"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +24,7 @@ type MatchmakingServer struct {
 	gameServer *game_server.GameServer
 	queueLock  sync.Mutex
 	queue      []*player
+	db         *model.Queries
 }
 
 type player struct {
@@ -45,13 +49,14 @@ func newPlayer(conn *websocket.Conn, server *MatchmakingServer) *player {
 	}
 }
 
-func NewMatchmakingServer(gameServer *game_server.GameServer) *MatchmakingServer {
+func NewMatchmakingServer(gameServer *game_server.GameServer, db *model.Queries) *MatchmakingServer {
 	serveMux := http.NewServeMux()
 	server := &MatchmakingServer{
 		ServeMux:   serveMux,
 		queue:      make([]*player, 0),
 		queueLock:  sync.Mutex{},
 		gameServer: gameServer,
+		db:         db,
 	}
 
 	serveMux.HandleFunc("/unranked", server.UnrankedHandler)
@@ -79,6 +84,24 @@ type QueueResponse struct {
 
 func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+
+	sessionId, err := req.Cookie(auth.CookieKeySession)
+	if err != nil {
+		http.Error(writer, "State cookie not found", http.StatusBadRequest)
+		return
+	}
+
+	_, err = server.db.GetSessionById(ctx, sessionId.Value)
+	if err == sql.ErrNoRows {
+		http.Error(writer, "No db session found", http.StatusUnauthorized)
+	} else if err != nil {
+		slog.Error(
+			"error retrieving session",
+			slog.Any("error", err),
+		)
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
+		return
+	}
 
 	server.queueLock.Lock()
 

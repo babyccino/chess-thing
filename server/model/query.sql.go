@@ -15,7 +15,7 @@ const createSession = `-- name: CreateSession :one
 INSERT INTO
   sessions (user_id, access_token, refresh_token, expires_at)
 VALUES
-  (?, ?, ?, ?) RETURNING id, user_id, access_token, refresh_token, expires_at, created_at, last_accessed_at
+  (?, ?, ?, ?) RETURNING id
 `
 
 type CreateSessionParams struct {
@@ -25,24 +25,16 @@ type CreateSessionParams struct {
 	ExpiresAt    time.Time
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (string, error) {
 	row := q.db.QueryRowContext(ctx, createSession,
 		arg.UserID,
 		arg.AccessToken,
 		arg.RefreshToken,
 		arg.ExpiresAt,
 	)
-	var i Session
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.AccessToken,
-		&i.RefreshToken,
-		&i.ExpiresAt,
-		&i.CreatedAt,
-		&i.LastAccessedAt,
-	)
-	return i, err
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createUser = `-- name: CreateUser :one
@@ -70,6 +62,17 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const deleteSessionsById = `-- name: DeleteSessionsById :exec
+DELETE FROM sessions
+WHERE
+  id = ?
+`
+
+func (q *Queries) DeleteSessionsById(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionsById, id)
+	return err
+}
+
 const deleteSessionsByUserId = `-- name: DeleteSessionsByUserId :exec
 DELETE FROM sessions
 WHERE
@@ -81,7 +84,7 @@ func (q *Queries) DeleteSessionsByUserId(ctx context.Context, userID int64) erro
 	return err
 }
 
-const getSession = `-- name: GetSession :one
+const getSessionById = `-- name: GetSessionById :one
 SELECT
   id, user_id, access_token, refresh_token, expires_at, created_at, last_accessed_at
 FROM
@@ -92,8 +95,8 @@ LIMIT
   1
 `
 
-func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
-	row := q.db.QueryRowContext(ctx, getSession, id)
+func (q *Queries) GetSessionById(ctx context.Context, id string) (Session, error) {
+	row := q.db.QueryRowContext(ctx, getSessionById, id)
 	var i Session
 	err := row.Scan(
 		&i.ID,
@@ -103,30 +106,6 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.LastAccessedAt,
-	)
-	return i, err
-}
-
-const getUser = `-- name: GetUser :one
-SELECT
-  id, username, email, created_at, updated_at
-FROM
-  users
-WHERE
-  id = ?
-LIMIT
-  1
-`
-
-func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUser, id)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.Email,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -144,6 +123,30 @@ LIMIT
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserById = `-- name: GetUserById :one
+SELECT
+  id, username, email, created_at, updated_at
+FROM
+  users
+WHERE
+  id = ?
+LIMIT
+  1
+`
+
+func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserById, id)
 	var i User
 	err := row.Scan(
 		&i.ID,

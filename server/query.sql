@@ -1,4 +1,4 @@
--- name: GetUser :one
+-- name: GetUserById :one
 SELECT
   *
 FROM
@@ -24,7 +24,7 @@ SELECT
 FROM
   users;
 
--- name: GetSession :one
+-- name: GetSessionById :one
 SELECT
   *
 FROM
@@ -44,9 +44,14 @@ VALUES
 INSERT INTO
   sessions (user_id, access_token, refresh_token, expires_at)
 VALUES
-  (?, ?, ?, ?) RETURNING *;
+  (?, ?, ?, ?) RETURNING id;
 
 -- name: DeleteSessionsByUserId :exec
 DELETE FROM sessions
 WHERE
   user_id = ?;
+
+-- name: DeleteSessionsById :exec
+DELETE FROM sessions
+WHERE
+  id = ?;
