@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX idx_users_email ON users (email);
 
 CREATE TABLE IF NOT EXISTS sessions (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY NOT NULL,
   user_id INTEGER NOT NULL,
   access_token TEXT NOT NULL,
   refresh_token TEXT,

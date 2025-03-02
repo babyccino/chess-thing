@@ -485,7 +485,7 @@ func ParseFen(fen string) (*BoardState, error) {
 
 // check stuff
 
-func (board *BoardState) GetKingPositions() (wKing *Position, bKing *Position, err error) {
+func (board *BoardState) GetKingPositions() (wKing, bKing *Position, err error) {
 	for i, piece := range board.State {
 		if piece.IsPieceAndColour(WKing) {
 			newKing := IndexToPosition(i)

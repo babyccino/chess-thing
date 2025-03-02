@@ -13,6 +13,7 @@ import (
 	"chess/env"
 	"chess/model"
 
+	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -45,6 +46,7 @@ func NewAuthServer(db *model.Queries, environment *env.Env) *AuthServer {
 
 	server.ServeMux.HandleFunc("/login", server.LoginHandler)
 	server.ServeMux.HandleFunc("/callback", server.CallbackHandler)
+	server.ServeMux.HandleFunc("/user", server.UserHandler)
 
 	return server
 }
@@ -121,22 +123,22 @@ func makeCookie(name, value string) *http.Cookie {
 	}
 }
 
-func (server *AuthServer) CallbackHandler(w http.ResponseWriter, req *http.Request) {
+func (server *AuthServer) CallbackHandler(writer http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	cookie, err := req.Cookie(cookieKeyState)
 	if err != nil {
-		http.Error(w, "State cookie not found", http.StatusBadRequest)
+		http.Error(writer, "State cookie not found", http.StatusBadRequest)
 		return
 	}
 
 	if req.URL.Query().Get("state") != cookie.Value {
-		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
+		http.Error(writer, "Invalid state parameter", http.StatusBadRequest)
 		return
 	}
 
 	timestamp, exists := server.stateStore[cookie.Value]
 	if !exists || time.Since(timestamp) > 10*time.Minute {
-		http.Error(w, "State expired or invalid", http.StatusBadRequest)
+		http.Error(writer, "State expired or invalid", http.StatusBadRequest)
 		slog.Error("State expired or invalid",
 			slog.Any("since", time.Since(timestamp)))
 		delete(server.stateStore, cookie.Value)
@@ -144,7 +146,7 @@ func (server *AuthServer) CallbackHandler(w http.ResponseWriter, req *http.Reque
 	}
 	delete(server.stateStore, cookie.Value)
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(writer, &http.Cookie{
 		Name:     cookieKeyState,
 		Path:     "/",
 		MaxAge:   UnsetMaxAge,
@@ -156,21 +158,21 @@ func (server *AuthServer) CallbackHandler(w http.ResponseWriter, req *http.Reque
 	code := req.URL.Query().Get("code")
 	token, err := server.oAuth2Config.Exchange(context.Background(), code)
 	if err != nil {
-		http.Error(w, "Failed to exchange token", http.StatusInternalServerError)
+		http.Error(writer, "Failed to exchange token", http.StatusInternalServerError)
 		return
 	}
 
 	client := server.oAuth2Config.Client(context.Background(), token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
 	if err != nil {
-		http.Error(w, "Failed to get user info", http.StatusInternalServerError)
+		http.Error(writer, "Failed to get user info", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 
 	var userInfo GoogleUserInfo
 	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
-		http.Error(w, "Failed to decode user info", http.StatusInternalServerError)
+		http.Error(writer, "Failed to decode user info", http.StatusInternalServerError)
 		return
 	}
 
@@ -186,7 +188,7 @@ func (server *AuthServer) CallbackHandler(w http.ResponseWriter, req *http.Reque
 				"an error was returned when creating a new user",
 				slog.Any("error", err),
 			)
-			http.Error(w, "Failed querying db", http.StatusInternalServerError)
+			http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 			return
 		}
 	} else if err != nil {
@@ -194,17 +196,18 @@ func (server *AuthServer) CallbackHandler(w http.ResponseWriter, req *http.Reque
 			"a non sql.ErrNoRows err was returned when getting user by email",
 			slog.Any("error", err),
 		)
-		http.Error(w, "Failed querying db", http.StatusInternalServerError)
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 		return
 	}
 
 	params := model.CreateSessionParams{
+		ID: uuid.NewString(),
 		UserID:       dbUser.ID,
 		AccessToken:  token.AccessToken,
 		RefreshToken: nullString(token.RefreshToken),
 		ExpiresAt:    token.Expiry,
 	}
-	dbSession, err := server.db.CreateSession(ctx, params)
+	dbSessionId, err := server.db.CreateSession(ctx, params)
 	if err != nil {
 		slog.Error(
 			"error creating session",
@@ -212,26 +215,26 @@ func (server *AuthServer) CallbackHandler(w http.ResponseWriter, req *http.Reque
 			slog.Any("params", params),
 			slog.Any("user", dbUser),
 		)
-		http.Error(w, "Failed querying db", http.StatusInternalServerError)
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 		return
 	}
 
 	userBytes, _ := json.Marshal(userInfo)
-	http.SetCookie(w, makeCookie(cookieKeyUser, base64.URLEncoding.EncodeToString(userBytes)))
-	http.SetCookie(w, makeCookie(CookieKeySession, dbSession))
+	http.SetCookie(writer, makeCookie(cookieKeyUser, base64.URLEncoding.EncodeToString(userBytes)))
+	http.SetCookie(writer, makeCookie(CookieKeySession, dbSessionId))
 
-	http.Redirect(w, req, "http://localhost:4321", http.StatusTemporaryRedirect)
+	http.Redirect(writer, req, "http://localhost:4321", http.StatusTemporaryRedirect)
 }
 
-func (server *AuthServer) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	cookie, err := r.Cookie(CookieKeySession)
 	if err != nil {
-		http.Error(w, "Session cookie not found", http.StatusBadRequest)
+		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(writer, &http.Cookie{
 		Name:     cookieKeyState,
 		Path:     "/",
 		MaxAge:   UnsetMaxAge,
@@ -239,7 +242,7 @@ func (server *AuthServer) LogoutHandler(w http.ResponseWriter, r *http.Request) 
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	http.Redirect(writer, r, "/", http.StatusTemporaryRedirect)
 
 	err = server.db.DeleteSessionsById(ctx, cookie.Value)
 	if err == sql.ErrNoRows {
@@ -249,7 +252,7 @@ func (server *AuthServer) LogoutHandler(w http.ResponseWriter, r *http.Request) 
 			"an error occurred while deleting sessions",
 			slog.Any("error", err),
 		)
-		http.Error(w, "Failed querying db", http.StatusInternalServerError)
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 		return
 	}
 }
@@ -288,6 +291,7 @@ func (server *AuthServer) RefreshToken(token *model.Session, w http.ResponseWrit
 	}
 
 	dbSession, err := server.db.CreateSession(ctx, model.CreateSessionParams{
+		ID: uuid.NewString(),
 		UserID:       session.UserID,
 		AccessToken:  newToken.AccessToken,
 		RefreshToken: nullString(newToken.RefreshToken),
@@ -341,6 +345,7 @@ func (server *AuthServer) RefreshHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	dbSession, err := server.db.CreateSession(ctx, model.CreateSessionParams{
+		ID: uuid.NewString(),
 		UserID:       session.UserID,
 		AccessToken:  newToken.AccessToken,
 		RefreshToken: nullString(newToken.RefreshToken),
@@ -357,4 +362,27 @@ func (server *AuthServer) RefreshHandler(w http.ResponseWriter, r *http.Request)
 
 	http.SetCookie(w, makeCookie(CookieKeySession, dbSession))
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+}
+
+func (server *AuthServer) UserHandler(writer http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	cookie, err := r.Cookie(CookieKeySession)
+	if err != nil {
+		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
+		return
+	}
+
+	sessionAndUser, err := server.db.GetSessionByIdAndUser(ctx, cookie.Value)
+	if err != nil {
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
+		return
+	}
+
+	body, err := json.Marshal(sessionAndUser)
+	if err != nil {
+		return
+	}
+
+	writer.Write(body)
+	writer.WriteHeader(http.StatusOK)
 }
