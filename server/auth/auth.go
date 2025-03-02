@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"chess/env"
-	"chess/model"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -11,6 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"chess/env"
+	"chess/model"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -87,9 +88,11 @@ const (
 	NoMaxage        = 0
 )
 
-const CookieKeySession = "session-token"
-const cookieKeyUser = "user"
-const cookieKeyState = "oauth_state"
+const (
+	CookieKeySession = "session-token"
+	cookieKeyUser    = "user"
+	cookieKeyState   = "oauth_state"
+)
 
 type GoogleUserInfo struct {
 	Sub           string `json:"sub"`            // Unique identifier for the user
@@ -178,7 +181,6 @@ func (server *AuthServer) CallbackHandler(w http.ResponseWriter, req *http.Reque
 				Username: nullString(userInfo.Name),
 				Email:    userInfo.Email,
 			})
-
 		if err != nil {
 			slog.Error(
 				"an error was returned when creating a new user",

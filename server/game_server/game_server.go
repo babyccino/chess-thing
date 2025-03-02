@@ -1,8 +1,6 @@
 package game_server
 
 import (
-	"chess/board"
-	"chess/utility"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"chess/board"
+	"chess/utility"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -254,7 +255,6 @@ func (session *Session) DeleteSubscriber(sub *subscriber) {
 }
 
 func (session *Session) end() {
-
 }
 
 func (session *Session) publishImpl(event Event, sub *subscriber) {
@@ -270,6 +270,7 @@ func (session *Session) publishImpl(event Event, sub *subscriber) {
 		sub.closeSlow()
 	}
 }
+
 func (session *Session) publish(sub *subscriber, event Event) {
 	count := 0
 	for _, player := range session.players {
@@ -338,7 +339,7 @@ func (sub *subscriber) initRead(ctx context.Context) {
 			return
 		}
 
-		var eventBuffer = Event{}
+		eventBuffer := Event{}
 		err = json.Unmarshal(buffer[:n], &eventBuffer)
 		if err != nil {
 			sub.closeNow(ctx, err)
@@ -369,6 +370,7 @@ func (session *Session) handleError(err error) {
 		viewer.closeNow(nil, err)
 	}
 }
+
 func (session *Session) handleMove(sub *subscriber, move board.Move) {
 	err := session.board.MakeMove(move)
 	if err != nil {

@@ -1,7 +1,9 @@
 package board
 
-type Piece uint16
-type Colour uint8
+type (
+	Piece  uint16
+	Colour uint8
+)
 
 func ColourString(colour Colour) string {
 	if colour == White {
@@ -10,6 +12,7 @@ func ColourString(colour Colour) string {
 		return "black"
 	}
 }
+
 func oppositeColour(colour Colour) Colour {
 	if colour == White {
 		return Black
@@ -128,6 +131,7 @@ const (
 func (piece Piece) Colour() Colour {
 	return Colour(piece & ColourMask)
 }
+
 func (piece Piece) Is(other PieceType) bool {
 	return !piece.IsClear() && piece.PieceType() == other
 }
@@ -137,21 +141,27 @@ const pieceAndColourMask = ColourMask | PieceMask
 func (piece Piece) IsPieceAndColour(other Piece) bool {
 	return piece&pieceAndColourMask == other&pieceAndColourMask
 }
+
 func (piece Piece) IsWhite() bool {
 	return piece.Colour() == White
 }
+
 func (piece Piece) IsBlack() bool {
 	return piece.Colour() == Black
 }
+
 func (piece Piece) IsClear() bool {
 	return piece&ColourMask == Clear
 }
+
 func (piece Piece) PieceType() PieceType {
 	return PieceType((piece & PieceMask) >> PieceShift)
 }
+
 func (piece Piece) IsDiagonalAttacker() bool {
 	return piece.Is(Queen) || piece.Is(Bishop)
 }
+
 func (piece Piece) IsStraightLongAttacker() bool {
 	return piece.Is(Queen) || piece.Is(Rook)
 }
@@ -159,9 +169,11 @@ func (piece Piece) IsStraightLongAttacker() bool {
 func (piece Piece) Pin(pin PinDirection) Piece {
 	return piece | (Piece(pin) << PinShift)
 }
+
 func (piece Piece) IsPinned() bool {
 	return piece&PinMask != 0b0
 }
+
 func (piece Piece) GetPin() PinDirection {
 	return PinDirection(piece&PinMask) >> PinShift
 }
@@ -169,6 +181,7 @@ func (piece Piece) GetPin() PinDirection {
 func (piece Piece) IsAttacked() bool {
 	return piece&AttackedMask == AttackedMask
 }
+
 func (piece Piece) Attacked() Piece {
 	return piece | AttackedMask
 }
@@ -176,6 +189,7 @@ func (piece Piece) Attacked() Piece {
 func (piece Piece) IsCheckSquare() bool {
 	return piece&CheckMask == CheckMask
 }
+
 func (piece Piece) CheckSquare() Piece {
 	return piece | CheckMask
 }
@@ -183,6 +197,7 @@ func (piece Piece) CheckSquare() Piece {
 func (piece Piece) Moved() Piece {
 	return piece | MovedMask
 }
+
 func (piece Piece) IsMoved() bool {
 	return piece&MovedMask == MovedMask
 }

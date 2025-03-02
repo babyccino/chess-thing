@@ -22,6 +22,7 @@ const (
 func checkIsWhite(check Check) bool {
 	return check == WhiteCheck || check == WhiteDoubleCheck
 }
+
 func checkIsBlack(check Check) bool {
 	return check >= BlackCheck
 }
@@ -214,6 +215,7 @@ func (board *BoardState) Print() {
 func (board *BoardState) GetSquare(pos Position) Piece {
 	return board.State[positionToIndex(pos)]
 }
+
 func (board *BoardState) SetSquare(pos Position, piece Piece) {
 	board.State[positionToIndex(pos)] = piece
 }
@@ -244,9 +246,11 @@ var pieceToStrArr = [...]rune{
 func (piece Piece) Rune() rune {
 	return pieceToStrArr[piece.arrIndex()]
 }
+
 func (piece Piece) String() string {
 	return string(piece.Rune())
 }
+
 func (piece Piece) StringDebug() string {
 	pieceChar := piece.String()
 	if piece.IsClear() {
@@ -279,6 +283,7 @@ var pieceToFenArr = [...]byte{
 func (piece Piece) FenByte() byte {
 	return pieceToFenArr[piece.arrIndex()]
 }
+
 func (piece Piece) FenString() string {
 	return string(piece.FenByte())
 }
@@ -385,7 +390,6 @@ func ParseFen(fen string) (*BoardState, error) {
 		}
 
 		piece, err := getPiece(char)
-
 		if err != nil {
 			return nil, fmt.Errorf("unexpected character found: %s ", string(char))
 		}
@@ -467,7 +471,6 @@ func ParseFen(fen string) (*BoardState, error) {
 
 	boardStrLen += 1
 	moveCounter, err := strconv.ParseUint(fen[boardStrLen:], 10, 0)
-
 	if err != nil {
 		return nil, err
 	}
@@ -735,6 +738,7 @@ func (board *BoardState) ResetPieceStates() {
 		board.State[index] = piece.Reset()
 	}
 }
+
 func (board *BoardState) UpdateAttackedSquares() {
 	whoseMove := board.WhoseMove()
 

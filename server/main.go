@@ -49,7 +49,6 @@ var ddl string
 func getDb(ctx context.Context, environment *env.Env) (*sql.DB, error) {
 	if environment.AppEnv == env.Dev {
 		db, err := sql.Open("sqlite3", ":memory:")
-
 		if err != nil {
 			return nil, err
 		}
@@ -66,8 +65,10 @@ func getDb(ctx context.Context, environment *env.Env) (*sql.DB, error) {
 	}
 }
 
-const CorsHeader = "Access-Control-Allow-Origin"
-const AllowAll = "*"
+const (
+	CorsHeader = "Access-Control-Allow-Origin"
+	AllowAll   = "*"
+)
 
 func (server *MiddlewareServer) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 	writer.Header().Add(CorsHeader, AllowAll)

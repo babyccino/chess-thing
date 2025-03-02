@@ -18,13 +18,16 @@ func NewSet[T comparable]() Set[T] {
 func (set *Set[T]) Add(key T) {
 	set.set[key] = struct{}{}
 }
+
 func (set *Set[T]) Has(key T) bool {
 	_, found := set.set[key]
 	return found
 }
+
 func (set *Set[T]) Remove(key T) {
 	delete(set.set, key)
 }
+
 func (set *Set[T]) DiffArr(other *Set[T]) []T {
 	ret := make([]T, 0)
 	for el := range set.Iter() {
@@ -34,12 +37,15 @@ func (set *Set[T]) DiffArr(other *Set[T]) []T {
 	}
 	return ret
 }
+
 func (set *Set[T]) Iter() iter.Seq[T] {
 	return maps.Keys(set.set)
 }
+
 func (set *Set[T]) Len() int {
 	return len(set.set)
 }
+
 func (set *Set[T]) String() string {
 	return fmt.Sprintf("%+v", set.set)
 }

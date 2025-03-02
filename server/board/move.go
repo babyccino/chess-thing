@@ -30,6 +30,7 @@ func MoveListToString(moveList []Move) string {
 func (move *Move) Serialise() string {
 	return fmt.Sprintf("%s:%s", move.From.CoordsString(), move.To.CoordsString())
 }
+
 func DeserialiseMove(str string) (Move, error) {
 	// TODO don't do this like a js andy
 	parts := strings.Split(str, ":")
@@ -178,6 +179,7 @@ func (moveMaker *LegalMoveCreator) addPawnMoveLong(piece Piece, from Position, d
 		moveMaker.addMove(from, to)
 	}
 }
+
 func (moveMaker *LegalMoveCreator) addPawnMoveStraight(piece Piece, from Position, dir Direction) error {
 	pin := piece.GetPin()
 	if !ableToMoveDirection(pin, dir) {
@@ -198,6 +200,7 @@ func (moveMaker *LegalMoveCreator) addPawnMoveStraight(piece Piece, from Positio
 	}
 	return nil
 }
+
 func (moveMaker *LegalMoveCreator) addPawnMoves(piece Piece, from Position) error {
 	if piece.Colour() == White {
 		err := moveMaker.addPawnMoveStraight(piece, from, Down)
@@ -237,6 +240,7 @@ func (moveMaker *LegalMoveCreator) addMoveKing(from Position, dir Direction) err
 	}
 	return nil
 }
+
 func (moveMaker *LegalMoveCreator) addKingMoves(from Position) error {
 	for dir := range Knight1 {
 		err := moveMaker.addMoveKing(from, dir)
@@ -246,6 +250,7 @@ func (moveMaker *LegalMoveCreator) addKingMoves(from Position) error {
 	}
 	return nil
 }
+
 func (moveMaker *LegalMoveCreator) addMovesInDirection(piece Piece, from Position, dir Direction) error {
 	pin := piece.GetPin()
 	if !ableToMoveDirection(pin, dir) {

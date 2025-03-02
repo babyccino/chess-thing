@@ -1,9 +1,6 @@
 package matchmaking_server
 
 import (
-	"chess/auth"
-	"chess/game_server"
-	"chess/model"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -14,6 +11,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"chess/auth"
+	"chess/game_server"
+	"chess/model"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -159,7 +160,7 @@ func (server *MatchmakingServer) UnrankedQueueHandler(writer http.ResponseWriter
 }
 
 func (server *MatchmakingServer) MarkDelete(id uuid.UUID) error {
-	//TODO
+	// TODO
 	return nil
 }
 

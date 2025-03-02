@@ -1,11 +1,12 @@
 package board_test
 
 import (
-	"chess/board"
-	"chess/utility"
 	"fmt"
 	"math/rand/v2"
 	"testing"
+
+	"chess/board"
+	"chess/utility"
 )
 
 func Test_piece_functions(test *testing.T) {
@@ -212,6 +213,7 @@ func legalMovesHelper(
 
 	return helperFromBoardInner(test, boardState, expectedMoves, fen)
 }
+
 func legalMovesHelperFromBoard(
 	test *testing.T,
 	boardState *board.BoardState,
@@ -221,6 +223,7 @@ func legalMovesHelperFromBoard(
 	fen := boardState.Fen()
 	return helperFromBoardInner(test, boardState, expectedMoves, fen)
 }
+
 func helperFromBoardInner(
 	test *testing.T,
 	boardState *board.BoardState,
@@ -659,6 +662,7 @@ func assertNumEq[T Number](test *testing.T, expected, received T) {
 			expected, received)
 	}
 }
+
 func assertBoolEq(test *testing.T, expected, received bool) {
 	test.Helper()
 	if expected != received {

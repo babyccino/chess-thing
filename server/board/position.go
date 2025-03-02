@@ -15,22 +15,28 @@ type Vector = Position
 func (pos *Position) String() string {
 	return fmt.Sprintf("Position{x: %d, y: %d}", pos.X, pos.Y)
 }
+
 func (pos *Position) Print() {
 	fmt.Print(pos.String() + "\n")
 }
+
 func (pos *Position) CoordsString() string {
 	bytes := []byte{byte('H' - pos.X), byte('1' + pos.Y)}
 	return string(bytes)
 }
+
 func (pos *Position) Add(other Position) Position {
 	return Position{pos.X + other.X, pos.Y + other.Y}
 }
+
 func (pos *Position) AddMult(other Position, mult int8) Position {
 	return Position{pos.X + mult*other.X, pos.Y + mult*other.Y}
 }
+
 func (pos *Position) Mult(mult int8) Position {
 	return Position{pos.X * mult, pos.Y * mult}
 }
+
 func (pos *Position) Diff(other Position) Position {
 	return Position{pos.X - other.X, pos.Y - other.Y}
 }
@@ -38,6 +44,7 @@ func (pos *Position) Diff(other Position) Position {
 func positionToIndex(pos Position) int8 {
 	return pos.X + 8*pos.Y
 }
+
 func IndexToPosition(index int) Position {
 	y := index / 8
 	x := index % 8
@@ -66,6 +73,7 @@ func StringToPosition(str string) (Position, error) {
 func (pos *Position) AddInBounds(other Position) (Position, bool) {
 	return pos.AddInBoundsMult(other, 1)
 }
+
 func (pos *Position) AddInBoundsMult(other Position, mult int8) (Position, bool) {
 	newX := pos.X + mult*other.X
 	newY := pos.Y + mult*other.Y
@@ -120,12 +128,15 @@ var reverseDirectionLookup = []Direction{
 func reverseDirection(direction Direction) Direction {
 	return reverseDirectionLookup[direction]
 }
+
 func isDiagonal(direction Direction) bool {
 	return direction <= UpRight
 }
+
 func isStraight(direction Direction) bool {
 	return direction >= Up && direction <= Right
 }
+
 func isKnight(direction Direction) bool {
 	return direction >= Knight1
 }
@@ -160,10 +171,13 @@ var directionArray = [...]Vector{
 	Knight5Vec, Knight6Vec,
 	Knight7Vec, Knight8Vec,
 }
-var diagonalDirectionArray = directionArray[:Up]
-var straightDirectionArray = directionArray[Up:Knight1]
-var nonKnightDirectionArray = directionArray[:Knight1]
-var knightDirectionArray = directionArray[Knight1:]
+
+var (
+	diagonalDirectionArray  = directionArray[:Up]
+	straightDirectionArray  = directionArray[Up:Knight1]
+	nonKnightDirectionArray = directionArray[:Knight1]
+	knightDirectionArray    = directionArray[Knight1:]
+)
 
 func directionToVec(dir Direction) Vector {
 	return directionArray[dir]
