@@ -11,7 +11,7 @@ import (
 
 type Session struct {
 	ID             string
-	UserID         int64
+	UserID         string
 	AccessToken    string
 	RefreshToken   sql.NullString
 	ExpiresAt      time.Time
@@ -20,7 +20,7 @@ type Session struct {
 }
 
 type User struct {
-	ID        int64
+	ID        string
 	Username  sql.NullString
 	Email     string
 	CreatedAt time.Time

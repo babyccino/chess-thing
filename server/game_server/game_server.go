@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"chess/auth"
 	"chess/board"
 	"chess/utility"
 
@@ -18,10 +19,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type SessionMap = map[uuid.UUID]*Session
 type GameServer struct {
 	ServeMux     *http.ServeMux
 	sessionsLock sync.Mutex
-	sessions     map[uuid.UUID]*Session
+	sessions     SessionMap
+	authServer   *auth.AuthServer
 }
 
 type Session struct {
@@ -45,11 +48,12 @@ type subscriber struct {
 	session     *Session
 }
 
-func NewGameServer() *GameServer {
+func NewGameServer(authServer *auth.AuthServer) *GameServer {
 	server := &GameServer{
 		ServeMux:     http.NewServeMux(),
-		sessions:     make(map[uuid.UUID]*Session),
+		sessions:     make(SessionMap),
 		sessionsLock: sync.Mutex{},
+		authServer:   authServer,
 	}
 
 	server.ServeMux.HandleFunc("/subscribe/", server.SubscribeHandler)
@@ -87,6 +91,10 @@ func (server *GameServer) OnShutdown() {
 }
 
 func (server *GameServer) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	if !server.authServer.IsAuthenticated(ctx, writer, req) {
+		return
+	}
 	server.ServeMux.ServeHTTP(writer, req)
 }
 

@@ -34,6 +34,19 @@ WHERE
 LIMIT
   1;
 
+-- name: GetSessionExists :one
+SELECT
+  EXISTS (
+    SELECT
+      1
+    FROM
+      sessions
+    WHERE
+      id = ?
+    LIMIT
+      1
+  );
+
 -- name: GetSessionByIdAndUser :one
 SELECT
   u.id as user_id,

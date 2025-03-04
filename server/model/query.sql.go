@@ -26,7 +26,7 @@ VALUES
 
 type CreateSessionParams struct {
 	ID           string
-	UserID       int64
+	UserID       string
 	AccessToken  string
 	RefreshToken sql.NullString
 	ExpiresAt    time.Time
@@ -87,7 +87,7 @@ WHERE
   user_id = ?
 `
 
-func (q *Queries) DeleteSessionsByUserId(ctx context.Context, userID int64) error {
+func (q *Queries) DeleteSessionsByUserId(ctx context.Context, userID string) error {
 	_, err := q.db.ExecContext(ctx, deleteSessionsByUserId, userID)
 	return err
 }
@@ -142,13 +142,13 @@ LIMIT
 `
 
 type GetSessionByIdAndUserRow struct {
-	UserID                int64
+	UserID                string
 	UserUsername          sql.NullString
 	UserEmail             string
 	UserCreatedAt         time.Time
 	UserUpdatedAt         time.Time
 	SessionID             string
-	SessionUserID         int64
+	SessionUserID         string
 	SessionAccessToken    string
 	SessionRefreshToken   sql.NullString
 	SessionExpiresAt      time.Time
@@ -174,6 +174,27 @@ func (q *Queries) GetSessionByIdAndUser(ctx context.Context, id string) (GetSess
 		&i.SessionLastAccessedAt,
 	)
 	return i, err
+}
+
+const getSessionExists = `-- name: GetSessionExists :one
+SELECT
+  EXISTS (
+    SELECT
+      1
+    FROM
+      sessions
+    WHERE
+      id = ?
+    LIMIT
+      1
+  )
+`
+
+func (q *Queries) GetSessionExists(ctx context.Context, id string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getSessionExists, id)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
@@ -211,7 +232,7 @@ LIMIT
   1
 `
 
-func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
+func (q *Queries) GetUserById(ctx context.Context, id string) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserById, id)
 	var i User
 	err := row.Scan(

@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT PRIMARY KEY NOT NULL,
   username TEXT,
   email TEXT NOT NULL UNIQUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -10,7 +10,7 @@ CREATE INDEX idx_users_email ON users (email);
 
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY NOT NULL,
-  user_id INTEGER NOT NULL,
+  user_id TEXT NOT NULL,
   access_token TEXT NOT NULL,
   refresh_token TEXT,
   expires_at TIMESTAMP NOT NULL,

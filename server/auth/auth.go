@@ -63,16 +63,44 @@ func generateState() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-func (server *AuthServer) LoginHandler(w http.ResponseWriter, r *http.Request) {
+func (server *AuthServer) createSession(
+	writer http.ResponseWriter,
+	ctx context.Context,
+	userID uuid.UUID,
+	accessToken string,
+	refreshToken string,
+	expiresAt time.Time,
+) (string, error) {
+	params := model.CreateSessionParams{
+		ID:           uuid.NewString(),
+		UserID:       userID.String(),
+		AccessToken:  accessToken,
+		RefreshToken: nullString(refreshToken),
+		ExpiresAt:    expiresAt,
+	}
+	dbSessionId, err := server.db.CreateSession(ctx, params)
+	if err != nil {
+		slog.Error(
+			"error creating session",
+			slog.Any("error", err),
+			slog.Any("params", params),
+		)
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
+		return "", err
+	}
+	return dbSessionId, err
+}
+
+func (server *AuthServer) LoginHandler(writer http.ResponseWriter, r *http.Request) {
 	state, err := generateState()
 	if err != nil {
-		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
+		http.Error(writer, "Failed to generate state", http.StatusInternalServerError)
 		return
 	}
 
 	server.stateStore[state] = time.Now()
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(writer, &http.Cookie{
 		Name:     cookieKeyState,
 		Value:    state,
 		HttpOnly: true,
@@ -82,7 +110,7 @@ func (server *AuthServer) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	url := server.oAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOnline)
-	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+	http.Redirect(writer, r, url, http.StatusTemporaryRedirect)
 }
 
 const (
@@ -200,22 +228,27 @@ func (server *AuthServer) CallbackHandler(writer http.ResponseWriter, req *http.
 		return
 	}
 
-	params := model.CreateSessionParams{
-		ID: uuid.NewString(),
-		UserID:       dbUser.ID,
-		AccessToken:  token.AccessToken,
-		RefreshToken: nullString(token.RefreshToken),
-		ExpiresAt:    token.Expiry,
-	}
-	dbSessionId, err := server.db.CreateSession(ctx, params)
+	userId, err := uuid.Parse(dbUser.ID)
 	if err != nil {
+		http.Error(writer, "Error paring uuid",
+			http.StatusInternalServerError)
 		slog.Error(
-			"error creating session",
+			"uuid parsing error",
 			slog.Any("error", err),
-			slog.Any("params", params),
-			slog.Any("user", dbUser),
+			slog.String("uuid", dbUser.ID),
 		)
-		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
+		return
+	}
+
+	dbSessionId, err := server.createSession(
+		writer, ctx,
+		userId,
+		token.AccessToken,
+		token.RefreshToken,
+		token.Expiry,
+	)
+	if err != nil {
+		// error handled in above function
 		return
 	}
 
@@ -257,76 +290,26 @@ func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, r *http.Requ
 	}
 }
 
-func (server *AuthServer) RefreshToken(token *model.Session, w http.ResponseWriter, r *http.Request) error {
+func (server *AuthServer) RefreshToken(
+	token *model.Session,
+	writer http.ResponseWriter,
+	r *http.Request,
+) {
 	ctx := r.Context()
 	cookie, err := r.Cookie(CookieKeySession)
 	if err != nil {
-		http.Error(w, "Session cookie not found", http.StatusBadRequest)
-		return err
-	}
-
-	session, err := server.db.GetSessionById(ctx, cookie.Value)
-	if err != nil {
-		http.Error(w, "Failed querying db", http.StatusInternalServerError)
-		return err
-	}
-
-	if session.ExpiresAt.Before(time.Now()) {
-		http.Error(w, "Session expired", http.StatusUnauthorized)
-		return err
-	}
-
-	newToken, err := server.oAuth2Config.TokenSource(ctx, &oauth2.Token{
-		AccessToken:  session.AccessToken,
-		RefreshToken: session.RefreshToken.String,
-		Expiry:       session.ExpiresAt,
-	}).Token()
-	if err != nil {
-		slog.Error(
-			"error generating token",
-			slog.Any("error", err),
-		)
-		http.Error(w, "Failed generating token", http.StatusInternalServerError)
-		return err
-	}
-
-	dbSession, err := server.db.CreateSession(ctx, model.CreateSessionParams{
-		ID: uuid.NewString(),
-		UserID:       session.UserID,
-		AccessToken:  newToken.AccessToken,
-		RefreshToken: nullString(newToken.RefreshToken),
-		ExpiresAt:    newToken.Expiry,
-	})
-	if err != nil {
-		slog.Error(
-			"error creating session",
-			slog.Any("error", err),
-		)
-		http.Error(w, "Failed querying db", http.StatusInternalServerError)
-		return err
-	}
-
-	http.SetCookie(w, makeCookie(CookieKeySession, dbSession))
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-	return nil
-}
-
-func (server *AuthServer) RefreshHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	cookie, err := r.Cookie(CookieKeySession)
-	if err != nil {
-		http.Error(w, "Session cookie not found", http.StatusBadRequest)
+		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
 		return
 	}
 
 	session, err := server.db.GetSessionById(ctx, cookie.Value)
 	if err != nil {
-		http.Error(w, "Failed querying db", http.StatusInternalServerError)
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 		return
 	}
 
 	if session.ExpiresAt.Before(time.Now()) {
-		http.Error(w, "Session expired", http.StatusUnauthorized)
+		http.Error(writer, "Session expired", http.StatusUnauthorized)
 		return
 	}
 
@@ -340,33 +323,100 @@ func (server *AuthServer) RefreshHandler(w http.ResponseWriter, r *http.Request)
 			"error generating token",
 			slog.Any("error", err),
 		)
-		http.Error(w, "Failed generating token", http.StatusInternalServerError)
+		http.Error(writer, "Failed generating token", http.StatusInternalServerError)
 		return
 	}
 
-	dbSession, err := server.db.CreateSession(ctx, model.CreateSessionParams{
-		ID: uuid.NewString(),
-		UserID:       session.UserID,
-		AccessToken:  newToken.AccessToken,
-		RefreshToken: nullString(newToken.RefreshToken),
-		ExpiresAt:    newToken.Expiry,
-	})
+	userId, err := uuid.Parse(session.UserID)
 	if err != nil {
+		http.Error(writer, "Error paring uuid",
+			http.StatusInternalServerError)
 		slog.Error(
-			"error creating session",
+			"uuid parsing error",
 			slog.Any("error", err),
+			slog.String("uuid", session.UserID),
 		)
-		http.Error(w, "Failed querying db", http.StatusInternalServerError)
 		return
 	}
 
-	http.SetCookie(w, makeCookie(CookieKeySession, dbSession))
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	dbSession, err := server.createSession(
+		writer, ctx,
+		userId,
+		newToken.AccessToken,
+		newToken.RefreshToken,
+		newToken.Expiry,
+	)
+	if err != nil {
+		return
+	}
+
+	http.SetCookie(writer, makeCookie(CookieKeySession, dbSession))
+	http.Redirect(writer, r, "/", http.StatusTemporaryRedirect)
 }
 
-func (server *AuthServer) UserHandler(writer http.ResponseWriter, r *http.Request) {
+func (server *AuthServer) RefreshHandler(writer http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	cookie, err := r.Cookie(CookieKeySession)
+	if err != nil {
+		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
+		return
+	}
+
+	session, err := server.db.GetSessionById(ctx, cookie.Value)
+	if err != nil {
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
+		return
+	}
+
+	if session.ExpiresAt.Before(time.Now()) {
+		http.Error(writer, "Session expired", http.StatusUnauthorized)
+		return
+	}
+
+	newToken, err := server.oAuth2Config.TokenSource(ctx, &oauth2.Token{
+		AccessToken:  session.AccessToken,
+		RefreshToken: session.RefreshToken.String,
+		Expiry:       session.ExpiresAt,
+	}).Token()
+	if err != nil {
+		slog.Error(
+			"error generating token",
+			slog.Any("error", err),
+		)
+		http.Error(writer, "Failed generating token", http.StatusInternalServerError)
+		return
+	}
+
+	userId, err := uuid.Parse(session.UserID)
+	if err != nil {
+		http.Error(writer, "Error paring uuid",
+			http.StatusInternalServerError)
+		slog.Error(
+			"uuid parsing error",
+			slog.Any("error", err),
+			slog.String("uuid", session.UserID),
+		)
+		return
+	}
+
+	dbSession, err := server.createSession(
+		writer, ctx,
+		userId,
+		newToken.AccessToken,
+		newToken.RefreshToken,
+		newToken.Expiry,
+	)
+	if err != nil {
+		return
+	}
+
+	http.SetCookie(writer, makeCookie(CookieKeySession, dbSession))
+	http.Redirect(writer, r, "/", http.StatusTemporaryRedirect)
+}
+
+func (server *AuthServer) UserHandler(writer http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	cookie, err := req.Cookie(CookieKeySession)
 	if err != nil {
 		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
 		return
@@ -385,4 +435,44 @@ func (server *AuthServer) UserHandler(writer http.ResponseWriter, r *http.Reques
 
 	writer.Write(body)
 	writer.WriteHeader(http.StatusOK)
+}
+
+func (server *AuthServer) GetUserSession(ctx context.Context,
+	writer http.ResponseWriter, req *http.Request) (model.GetSessionByIdAndUserRow, error) {
+	cookie, err := req.Cookie(CookieKeySession)
+	if err != nil {
+		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
+		return model.GetSessionByIdAndUserRow{}, err
+	}
+
+	sessionAndUser, err := server.db.GetSessionByIdAndUser(ctx, cookie.Value)
+	if err != nil {
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
+		return model.GetSessionByIdAndUserRow{}, err
+	}
+
+	return sessionAndUser, err
+}
+
+func (server *AuthServer) IsAuthenticated(ctx context.Context, writer http.ResponseWriter, req *http.Request) bool {
+	sessionId, err := req.Cookie(CookieKeySession)
+	if err != nil {
+		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
+		return false
+	}
+
+	_, err = server.db.GetSessionExists(ctx, sessionId.Value)
+	if err == sql.ErrNoRows {
+		http.Error(writer, "No db session found", http.StatusUnauthorized)
+		return false
+	} else if err != nil {
+		slog.Error(
+			"error retrieving session",
+			slog.Any("error", err),
+		)
+		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
+		return false
+	}
+
+	return true
 }

@@ -8,7 +8,6 @@
     newBoard,
     parseMove,
     pieceToIcon,
-    serialiseMove,
     type Move,
   } from "../library/board"
   import {

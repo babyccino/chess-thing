@@ -94,9 +94,10 @@ func run() error {
 
 	queries := model.New(db)
 
-	gameServer := game_server.NewGameServer()
-	matchmakingServer := matchmaking_server.NewMatchmakingServer(gameServer, queries)
 	authServer := auth.NewAuthServer(queries, environment)
+	gameServer := game_server.NewGameServer(authServer)
+	matchmakingServer := matchmaking_server.NewMatchmakingServer(gameServer,
+		queries, authServer)
 
 	mux := http.NewServeMux()
 	mux.Handle("/game/", http.StripPrefix("/game", gameServer))

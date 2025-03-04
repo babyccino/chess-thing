@@ -2,7 +2,6 @@ package matchmaking_server
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +25,7 @@ type MatchmakingServer struct {
 	queueLock  sync.Mutex
 	queue      []*player
 	db         *model.Queries
+	authServer *auth.AuthServer
 }
 
 type player struct {
@@ -50,7 +50,7 @@ func newPlayer(conn *websocket.Conn, server *MatchmakingServer) *player {
 	}
 }
 
-func NewMatchmakingServer(gameServer *game_server.GameServer, db *model.Queries) *MatchmakingServer {
+func NewMatchmakingServer(gameServer *game_server.GameServer, db *model.Queries, authServer *auth.AuthServer) *MatchmakingServer {
 	serveMux := http.NewServeMux()
 	server := &MatchmakingServer{
 		ServeMux:   serveMux,
@@ -58,6 +58,7 @@ func NewMatchmakingServer(gameServer *game_server.GameServer, db *model.Queries)
 		queueLock:  sync.Mutex{},
 		gameServer: gameServer,
 		db:         db,
+		authServer: authServer,
 	}
 
 	serveMux.HandleFunc("/unranked", server.UnrankedHandler)
@@ -83,68 +84,71 @@ type QueueResponse struct {
 	GameId string `json:"gameId,omitempty"`
 }
 
+func (server *MatchmakingServer) popQueue() *player {
+	player := server.queue[0]
+	server.queue = server.queue[1:]
+	return player
+}
+
+func (player *player) write(ctx context.Context, bytes []byte) error {
+	return player.Conn.Write(ctx,
+		websocket.MessageText,
+		bytes)
+}
+
 func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-
-	sessionId, err := req.Cookie(auth.CookieKeySession)
-	if err != nil {
-		http.Error(writer, "State cookie not found", http.StatusBadRequest)
-		return
-	}
-
-	_, err = server.db.GetSessionById(ctx, sessionId.Value)
-	if err == sql.ErrNoRows {
-		http.Error(writer, "No db session found", http.StatusUnauthorized)
-	} else if err != nil {
-		slog.Error(
-			"error retrieving session",
-			slog.Any("error", err),
-		)
-		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
+	if !server.authServer.IsAuthenticated(ctx, writer, req) {
 		return
 	}
 
 	server.queueLock.Lock()
 
-	if len(server.queue) > 0 {
-		player := server.queue[0]
-		server.queue = server.queue[1:]
+	if len(server.queue) == 0 {
 		server.queueLock.Unlock()
 
-		gameId := server.gameServer.NewSession()
-
-		bytes, err := json.Marshal(QueueResponse{true, gameId.String()})
+		bytes, err := json.Marshal(QueueResponse{Found: false})
 		if err != nil {
-			server.queueLock.Lock()
-			server.queue = append(server.queue, player)
-			server.queueLock.Unlock()
-			writer.WriteHeader(500)
-			writer.Write([]byte("{\"ok\":true}"))
+			writer.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		writer.Header().Add("Content-Type", "application/json")
 		writer.Write(bytes)
-
-		player.Conn.Write(ctx, websocket.MessageText, bytes)
-		player.closeNow(ctx, nil)
 		return
 	}
+
+	player := server.popQueue()
 	server.queueLock.Unlock()
 
-	bytes, err := json.Marshal(QueueResponse{Found: false})
+	gameId := server.gameServer.NewSession()
+
+	bytes, err := json.Marshal(QueueResponse{true, gameId.String()})
 	if err != nil {
-		writer.WriteHeader(500)
-		return
+		player.write(ctx, []byte("{\"found\":false,\"error\":\"ERROR\"}"))
+		player.closeNow(ctx, nil)
+
+		writer.WriteHeader(http.StatusInternalServerError)
+		writer.Write([]byte("{\"found\":false}"))
+
+		panic("error marshalling json")
 	}
 
 	writer.Header().Add("Content-Type", "application/json")
 	writer.Write(bytes)
+
+	player.write(ctx, bytes)
+	player.closeNow(ctx, nil)
 }
 
 func (server *MatchmakingServer) UnrankedQueueHandler(writer http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	err := server.Subscribe(ctx, writer, req)
+	session, err := server.authServer.GetUserSession(ctx, writer, req)
+	if err != nil {
+		return
+	}
+
+	err = server.Subscribe(ctx, writer, req, session.SessionUserID)
 	if err == nil {
 		return
 	}
@@ -166,7 +170,8 @@ func (server *MatchmakingServer) MarkDelete(id uuid.UUID) error {
 
 // subscribeHandler accepts the WebSocket connection and then subscribes
 // it to all future messages.
-func (server *MatchmakingServer) Subscribe(ctx context.Context, writer http.ResponseWriter, req *http.Request) error {
+func (server *MatchmakingServer) Subscribe(ctx context.Context,
+	writer http.ResponseWriter, req *http.Request, userId string) error {
 	// todo accept header
 	conn, err := websocket.Accept(writer, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
