@@ -4,31 +4,29 @@ import (
 	"fmt"
 	"iter"
 	"maps"
+	"strings"
 )
 
-type Set[T comparable] struct {
-	set map[T]struct{}
-}
+type Set[T comparable] map[T]struct{}
 
 func NewSet[T comparable]() Set[T] {
-	set := make(map[T]struct{})
-	return Set[T]{set}
+	return make(Set[T])
 }
 
-func (set *Set[T]) Add(key T) {
-	set.set[key] = struct{}{}
+func (set Set[T]) Add(key T) {
+	set[key] = struct{}{}
 }
 
-func (set *Set[T]) Has(key T) bool {
-	_, found := set.set[key]
+func (set Set[T]) Has(key T) bool {
+	_, found := set[key]
 	return found
 }
 
-func (set *Set[T]) Remove(key T) {
-	delete(set.set, key)
+func (set Set[T]) Remove(key T) {
+	delete(set, key)
 }
 
-func (set *Set[T]) DiffArr(other *Set[T]) []T {
+func (set Set[T]) DiffArr(other *Set[T]) []T {
 	ret := make([]T, 0)
 	for el := range set.Iter() {
 		if !other.Has(el) {
@@ -38,14 +36,20 @@ func (set *Set[T]) DiffArr(other *Set[T]) []T {
 	return ret
 }
 
-func (set *Set[T]) Iter() iter.Seq[T] {
-	return maps.Keys(set.set)
+func (set Set[T]) Iter() iter.Seq[T] {
+	return maps.Keys(set)
 }
 
-func (set *Set[T]) Len() int {
-	return len(set.set)
+func (set Set[T]) Len() int {
+	return len(set)
 }
 
-func (set *Set[T]) String() string {
-	return fmt.Sprintf("%+v", set.set)
+func (set Set[T]) String() string {
+	builder := strings.Builder{}
+	builder.WriteString("set{ ")
+	for el := range set {
+		builder.WriteString(fmt.Sprintf("%v, ", el))
+	}
+	builder.WriteString(" }")
+	return builder.String()
 }
