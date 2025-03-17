@@ -1,71 +1,171 @@
 ---
 import Layout from "../layouts/Layout.astro"
+import { Icon } from "astro-icon/components"
+
+const formats = [
+  "1+0",
+  "1+1",
+  "2+1",
+  "3+0",
+  "3+2",
+  "5+3",
+  "10+0",
+  "10+5",
+  "15+20",
+  "30+0",
+  "custom",
+]
 ---
 
 <Layout>
-  <div>hi there</div>
-  <a href="http://localhost:3000/api/auth/login">Login</a>
-  <button id="queue">Join Queue</button>
+  <div class="mt-8 grid grid-cols-3 max-w-3xl gap-2">
+    {
+      formats.map(format => (
+        <button
+          data-game-format={format}
+          class="queue-btns text-xl size-36 border border-gray-500 hover:border-gray-400 rounded-md transition-colors hover:bg-white/5 flex justify-center items-center"
+        >
+          <span class="queue-btns-text">{format}</span>
+          <Icon class="queue-btns-icon hidden" name="svg-spinners:3-dots-fade" />
+        </button>
+      ))
+    }
+  </div>
 </Layout>
 
 <script>
-  const webPath = "http://localhost:4321"
-  const apiPath = "http://localhost:3000"
-  const apiWsPath = "ws://localhost:3000"
+  type Res =
+    | {
+        found: false
+      }
+    | {
+        found: true
+        gameId: string
+      }
+
+  const basePath = "http://localhost:3000"
+  const apiPath = "http://localhost:3000/api"
+  const apiWsPath = "ws://localhost:3000/api"
 
   function goTo(id: string) {
-    window.location.href = `${webPath}/game?gameId=${id}`
+    const url = new URL(basePath + "/game")
+    url.searchParams.append("gameId", id)
+    window.location.href = url.toString()
   }
 
-  const button = document.getElementById("queue")
-  if (button === null) throw new Error("no button element")
+  let abortable = null as {
+    format: string
+    abort: AbortController
+  } | null
 
-  let ws: WebSocket | null = null
+  const makeListener = (format: string, button: Element) => async (_event: Event) => {
+    if (abortable !== null) {
+      abortable.abort.abort()
 
-  button.addEventListener("click", async () => {
-    const matchmaking = {
-      unranked: apiPath + "/matchmaking/unranked",
+      if (abortable.format === format) {
+        abortable = null
+        return
+      }
     }
-    console.log("making request to ", matchmaking.unranked)
-    const res = await fetch(matchmaking.unranked)
-    type Res =
-      | {
-          found: false
-        }
-      | {
-          found: true
-          gameId: string
-        }
-    const json: Res = await res.json()
 
-    console.log({ json })
+    const abort = new AbortController()
+    abortable = { format, abort }
+
+    for (const text of button.getElementsByClassName("queue-btns-text")) {
+      text.classList.add("hidden")
+      break
+    }
+    for (const icon of button.getElementsByClassName("queue-btns-icon")) {
+      icon.classList.remove("hidden")
+      break
+    }
+
+    const signal = abort.signal
+    signal.onabort = () => {
+      for (const text of button.getElementsByClassName("queue-btns-text")) {
+        text.classList.remove("hidden")
+        break
+      }
+      for (const icon of button.getElementsByClassName("queue-btns-icon")) {
+        icon.classList.add("hidden")
+        break
+      }
+    }
+
+    const url = new URL(apiPath + "/matchmaking/unranked")
+    url.searchParams.append("format", format)
+    const str = url.toString()
+
+    console.log("making request to ", str)
+    const res = await fetch(str, { signal })
+    if (signal.aborted) return
+
+    const json: Res = await res.json()
+    if (signal.aborted) return
+    console.log("matchmaking res:", { json })
 
     if (json.found) {
       goTo(json.gameId)
       return
     }
 
-    ws = new WebSocket(apiWsPath + "/matchmaking/unranked/subscribe")
+    const ws = new WebSocket(apiWsPath + "/matchmaking/unranked/subscribe")
 
-    ws.addEventListener("open", event => {
-      console.log("open:", event)
-    })
-    ws.addEventListener("close", event => {
-      console.log("close:", event)
-    })
+    ws.addEventListener(
+      "open",
+      event => {
+        console.log("open:", event)
+      },
+      { signal },
+    )
 
-    ws.addEventListener("message", event => {
-      console.log("received:", event)
+    ws.addEventListener(
+      "close",
+      event => {
+        console.log("close:", event)
+      },
+      { signal },
+    )
+
+    function onMessage(event: MessageEvent) {
+      if (signal.aborted) return
       if (typeof event.data !== "string") throw new Error("ws response not a string")
       const json: Res = JSON.parse(event.data)
 
-      console.log({ json })
+      console.log("ws message received:", json)
 
       if (json.found) {
         goTo(json.gameId)
       } else {
         throw new Error(JSON.stringify(json, null, 2))
       }
-    })
+    }
+    ws.addEventListener("message", onMessage, { signal })
+  }
+
+  const formats = [
+    "1+0",
+    "1+1",
+    "2+1",
+    "3+0",
+    "3+2",
+    "5+3",
+    "10+0",
+    "10+5",
+    "15+20",
+    "30+0",
+    "custom",
+  ]
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const buttons = document.getElementsByClassName("queue-btns")
+    for (const button of buttons) {
+      const format = button.attributes.getNamedItem("data-game-format")
+      if (!format) {
+        console.error("queue button missing data game format")
+        return
+      }
+      button.addEventListener("click", makeListener(format.value, button))
+    }
   })
 </script>

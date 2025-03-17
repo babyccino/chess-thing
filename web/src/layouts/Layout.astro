@@ -3,6 +3,10 @@ import { ClientRouter } from "astro:transitions"
 import { Icon } from "astro-icon/components"
 
 const profileId = "profile"
+const iconId = "icon"
+const loginId = "login"
+const loginUrl = "http://localhost:3000/api/auth/login"
+const indexUrl = "http://localhost:3000"
 ---
 
 <!doctype html>
@@ -15,28 +19,30 @@ const profileId = "profile"
     <title>Chess baby</title>
     <ClientRouter />
   </head>
-  <body class="dark:bg-gray-900 dark:text-gray-50">
+  <body class="dark:bg-gray-950 dark:text-gray-50">
     <div class="relative flex flex-col flex-nowrap">
       <header transition:persist="header">
-        <nav id="separator-sidebar" class="" aria-label="Sidebar">
-          <ul class="font-medium flex mx-2 mt-2">
-            <h4 class="text-muted-foreground mb-1 ml-3 text-xs font-light">Legal</h4>
-            <hr class="mt-5 border-none" />
-            <h4 class="text-muted-foreground mb-1 ml-3 text-xs font-light">Legal</h4>
-            <space class="grow"></space>
-            <h4
-              id={profileId}
-              class="text-muted-foreground mb-1 ml-3 text-xs font-light justify-self-end"
+        <nav id="separator-sidebar" class="p-2 px-4 flex items-center" aria-label="Sidebar">
+          <h1>Corner Chess</h1>
+
+          <ul class="font-medium ml-2 grow flex items-center">
+            <a
+              href={indexUrl}
+              class="text-muted-foreground ml-3 px-2 py-1 text-xs font-light rounded-md hover:bg-white/10 transition-colors"
             >
-              <Icon name="svg-spinners:3-dots-fade" />
-            </h4>
+              Lobby
+            </a>
+            <div class="grow"></div>
+            <div class="text-muted-foreground ml-3 text-xs font-light justify-self-end">
+              <Icon id={iconId} name="svg-spinners:3-dots-fade" />
+              <h4 id={profileId} class="hidden"></h4>
+              <a id={loginId} class="hidden" href={loginUrl}>Login</a>
+            </div>
           </ul>
         </nav>
       </header>
 
       <div class="hidden w-64 sm:block" transition:persist="header-blocker"></div>
-
-      <h1>Corner Chess</h1>
 
       <main class="flex min-h-screen flex-1 flex-col items-center">
         <slot />
@@ -67,17 +73,46 @@ const profileId = "profile"
   }
 
   const profileId = "profile"
-  document.addEventListener("DOMContentLoaded", () => {
+  const iconId = "icon"
+  const loginId = "login"
+
+  function getUser(): GoogleUserInfo | null {
     const decodedCookie = decodeURIComponent(document.cookie)
-    const profile = document.getElementById(profileId)
-    if (!profile) {
-      throw new Error()
-    }
 
     const userLookup = /(?:^|\s|;)user=([A-Za-z0-9+\/=]*)/gm
     const matches = decodedCookie.matchAll(userLookup)
-    let endIndex: number | undefined = decodedCookie.indexOf(" ", startIndex + userLookup.length)
-    if (endIndex === -1) endIndex = undefined
-    profile.innerText = decodedCookie
+
+    for (const match of matches) {
+      try {
+        const user = JSON.parse(atob(match[1]))
+        if (user.name == undefined) return null
+        return user
+      } catch (error) {
+        console.error(error)
+        return null
+      }
+    }
+
+    return null
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const profile = document.getElementById(profileId)
+    const icon = document.getElementById(iconId)
+    const login = document.getElementById(loginId)
+    if (!profile || !icon || !login) {
+      throw new Error()
+    }
+
+    const user = getUser()
+    icon.classList.add("hidden")
+
+    if (user === null) {
+      login.classList.remove("hidden")
+      return
+    }
+
+    profile.classList.remove("hidden")
+    profile.innerText = user.name
   })
 </script>
