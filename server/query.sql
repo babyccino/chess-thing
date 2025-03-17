@@ -71,9 +71,9 @@ LIMIT
 
 -- name: CreateUser :one
 INSERT INTO
-  users (username, email)
+  users (id, username, email)
 VALUES
-  (?, ?) RETURNING *;
+  (?, ?, ?) RETURNING *;
 
 -- name: CreateSession :one
 INSERT INTO

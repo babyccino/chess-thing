@@ -8,8 +8,11 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"chess/auth"
@@ -94,15 +97,65 @@ func run() error {
 
 	queries := model.New(db)
 
-	authServer := auth.NewAuthServer(queries, environment)
+	// todo prod
+	redirectPath := "http://localhost:3000/api"
+	authServer := auth.NewAuthServer(queries, environment, redirectPath)
 	gameServer := game_server.NewGameServer(authServer)
 	matchmakingServer := matchmaking_server.NewMatchmakingServer(gameServer,
 		queries, authServer)
 
 	mux := http.NewServeMux()
-	mux.Handle("/game/", http.StripPrefix("/game", gameServer))
-	mux.Handle("/matchmaking/", http.StripPrefix("/matchmaking", matchmakingServer))
-	mux.Handle("/auth/", http.StripPrefix("/auth", authServer))
+
+	/**
+	in dev this will be the main server and astro will be used for convenience
+	in prod we're gonna statically generate html, serve that with nginx,
+			and reverse proxy api requests to the go server
+
+	prod: req -> nginx ->(api) go server
+	                   ->(page) static html
+
+	dev: req -> go server ->(api) go server
+	                      ->(page) astro server
+
+	dno why I did this this way tbh I could have just used the astro server as the proxy
+	to the api server
+	**/
+
+	prefix := ""
+	if environment.AppEnv == env.Dev {
+		prefix = "/api"
+
+		originServerURL, err := url.Parse("http://localhost:4321")
+		if err != nil {
+			log.Fatal("invalid origin server URL")
+		}
+
+		proxy := httputil.NewSingleHostReverseProxy(originServerURL)
+
+		proxy.Director = func(req *http.Request) {
+			req.Header.Set("X-Forwarded-For", req.RemoteAddr)
+			req.URL.Host = originServerURL.Host
+			req.URL.Scheme = originServerURL.Scheme
+		}
+
+		mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/api") {
+				return
+			}
+			proxy.ServeHTTP(writer, req)
+		})
+	}
+
+	gamePath := prefix + "/game"
+	matchPath := prefix + "/matchmaking"
+	authPath := prefix + "/auth"
+
+	mux.Handle(gamePath+"/",
+		http.StripPrefix(gamePath, gameServer))
+	mux.Handle(matchPath+"/",
+		http.StripPrefix(matchPath, matchmakingServer))
+	mux.Handle(authPath+"/",
+		http.StripPrefix(authPath, authServer))
 
 	middlewareServer := MiddlewareServer{ServeMux: mux}
 

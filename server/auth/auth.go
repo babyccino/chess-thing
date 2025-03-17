@@ -27,13 +27,13 @@ type AuthServer struct {
 	db           *model.Queries
 }
 
-func NewAuthServer(db *model.Queries, environment *env.Env) *AuthServer {
+func NewAuthServer(db *model.Queries, environment *env.Env, path string) *AuthServer {
 	server := &AuthServer{
 		ServeMux: http.NewServeMux(),
 		oAuth2Config: &oauth2.Config{
 			ClientID:     environment.OauthClientId,
 			ClientSecret: environment.OauthClientSecret,
-			RedirectURL:  "http://localhost:3000/auth/callback",
+			RedirectURL:  path + "/auth/callback",
 			Scopes: []string{
 				"https://www.googleapis.com/auth/userinfo.email",
 				"https://www.googleapis.com/auth/userinfo.profile",
@@ -139,12 +139,12 @@ func nullString(str string) sql.NullString {
 	return sql.NullString{String: str, Valid: true}
 }
 
-func makeCookie(name, value string) *http.Cookie {
+func makeCookie(name, value string, httpOnly bool) *http.Cookie {
 	return &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     "/",
-		HttpOnly: true,
+		HttpOnly: httpOnly,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   60 * 60 * 24, // 24 hours
@@ -208,6 +208,7 @@ func (server *AuthServer) CallbackHandler(writer http.ResponseWriter, req *http.
 	if err == sql.ErrNoRows {
 		dbUser, err = server.db.CreateUser(ctx,
 			model.CreateUserParams{
+				ID:       uuid.NewString(),
 				Username: nullString(userInfo.Name),
 				Email:    userInfo.Email,
 			})
@@ -253,10 +254,13 @@ func (server *AuthServer) CallbackHandler(writer http.ResponseWriter, req *http.
 	}
 
 	userBytes, _ := json.Marshal(userInfo)
-	http.SetCookie(writer, makeCookie(cookieKeyUser, base64.URLEncoding.EncodeToString(userBytes)))
-	http.SetCookie(writer, makeCookie(CookieKeySession, dbSessionId))
+	http.SetCookie(writer, makeCookie(cookieKeyUser,
+		base64.URLEncoding.EncodeToString(userBytes), false))
+	http.SetCookie(writer,
+		makeCookie(CookieKeySession, dbSessionId, true))
 
-	http.Redirect(writer, req, "http://localhost:4321", http.StatusTemporaryRedirect)
+	// todo redirect
+	http.Redirect(writer, req, "http://localhost:3000", http.StatusTemporaryRedirect)
 }
 
 func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, r *http.Request) {
@@ -350,7 +354,8 @@ func (server *AuthServer) RefreshToken(
 		return
 	}
 
-	http.SetCookie(writer, makeCookie(CookieKeySession, dbSession))
+	http.SetCookie(writer,
+		makeCookie(CookieKeySession, dbSession, true))
 	http.Redirect(writer, r, "/", http.StatusTemporaryRedirect)
 }
 
@@ -410,7 +415,8 @@ func (server *AuthServer) RefreshHandler(writer http.ResponseWriter, r *http.Req
 		return
 	}
 
-	http.SetCookie(writer, makeCookie(CookieKeySession, dbSession))
+	http.SetCookie(writer,
+		makeCookie(CookieKeySession, dbSession, true))
 	http.Redirect(writer, r, "/", http.StatusTemporaryRedirect)
 }
 

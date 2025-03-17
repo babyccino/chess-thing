@@ -47,18 +47,19 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (s
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO
-  users (username, email)
+  users (id, username, email)
 VALUES
-  (?, ?) RETURNING id, username, email, created_at, updated_at
+  (?, ?, ?) RETURNING id, username, email, created_at, updated_at
 `
 
 type CreateUserParams struct {
+	ID       string
 	Username sql.NullString
 	Email    string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser, arg.Username, arg.Email)
+	row := q.db.QueryRowContext(ctx, createUser, arg.ID, arg.Username, arg.Email)
 	var i User
 	err := row.Scan(
 		&i.ID,

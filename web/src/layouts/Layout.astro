@@ -1,6 +1,8 @@
 ---
 import { ClientRouter } from "astro:transitions"
 import { Icon } from "astro-icon/components"
+
+const profileId = "profile"
 ---
 
 <!doctype html>
@@ -14,42 +16,27 @@ import { Icon } from "astro-icon/components"
     <ClientRouter />
   </head>
   <body class="dark:bg-gray-900 dark:text-gray-50">
-    <script>
-      // TODO
-
-      // const button = document.getElementById("sidebarSeparator");
-      // if (!button) throw new Error("no sidebar button");
-
-      // let showSidebar = false;
-      // function setShowSideBar() {
-      //   showSidebar = !showSidebar;
-      // }
-      // button.addEventListener("click", setShowSideBar);
-    </script>
-    <div class="relative flex flex-col sm:flex-row">
+    <div class="relative flex flex-col flex-nowrap">
       <header transition:persist="header">
-        <button data:separator-sidebar class="p-4 sm:hidden" aria-controls="separator-sidebar">
-          <span class="sr-only">Open sidebar</span>
-          <Icon name="lucide:menu" />
-        </button>
-        <!-- todo sidebar handling -->
-        <!-- <div class="animate-fadeIn fixed inset-0 z-20 bg-black/40"></div> -->
-        <!-- todo sidebar handling -->
-        <nav
-          id="separator-sidebar"
-          class="bg-card fixed left-0 top-0 z-40 flex h-screen w-64 flex-col justify-between overflow-y-auto px-3 py-4 transition-transform sm:translate-x-0"
-          aria-label="Sidebar"
-        >
-          <ul class="font-medium">
-            <!-- TODO -->
+        <nav id="separator-sidebar" class="" aria-label="Sidebar">
+          <ul class="font-medium flex mx-2 mt-2">
+            <h4 class="text-muted-foreground mb-1 ml-3 text-xs font-light">Legal</h4>
             <hr class="mt-5 border-none" />
             <h4 class="text-muted-foreground mb-1 ml-3 text-xs font-light">Legal</h4>
-            <!-- TODO -->
+            <space class="grow"></space>
+            <h4
+              id={profileId}
+              class="text-muted-foreground mb-1 ml-3 text-xs font-light justify-self-end"
+            >
+              <Icon name="svg-spinners:3-dots-fade" />
+            </h4>
           </ul>
         </nav>
       </header>
 
       <div class="hidden w-64 sm:block" transition:persist="header-blocker"></div>
+
+      <h1>Corner Chess</h1>
 
       <main class="flex min-h-screen flex-1 flex-col items-center">
         <slot />
@@ -66,3 +53,31 @@ import { Icon } from "astro-icon/components"
     height: 100%;
   }
 </style>
+
+<script>
+  type GoogleUserInfo = {
+    sub: string
+    name: string
+    givenName: string
+    familyName: string
+    picture: string
+    email: string
+    emailVerified: boolean
+    locale: string
+  }
+
+  const profileId = "profile"
+  document.addEventListener("DOMContentLoaded", () => {
+    const decodedCookie = decodeURIComponent(document.cookie)
+    const profile = document.getElementById(profileId)
+    if (!profile) {
+      throw new Error()
+    }
+
+    const userLookup = /(?:^|\s|;)user=([A-Za-z0-9+\/=]*)/gm
+    const matches = decodedCookie.matchAll(userLookup)
+    let endIndex: number | undefined = decodedCookie.indexOf(" ", startIndex + userLookup.length)
+    if (endIndex === -1) endIndex = undefined
+    profile.innerText = decodedCookie
+  })
+</script>
