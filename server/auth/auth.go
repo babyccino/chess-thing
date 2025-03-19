@@ -460,24 +460,26 @@ func (server *AuthServer) GetUserSession(ctx context.Context,
 	return sessionAndUser, err
 }
 
-func (server *AuthServer) IsAuthenticated(ctx context.Context, writer http.ResponseWriter, req *http.Request) bool {
+func (server *AuthServer) IsAuthenticated(
+	ctx context.Context, writer http.ResponseWriter, req *http.Request,
+) (bool, error) {
 	sessionId, err := req.Cookie(CookieKeySession)
 	if err != nil {
 		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
-		return false
+		return false, err
 	}
 
 	_, err = server.db.GetSessionExists(ctx, sessionId.Value)
 	if err == sql.ErrNoRows {
 		http.Error(writer, "No db session found", http.StatusUnauthorized)
-		return false
+		return false, err
 	} else if err != nil {
 		slog.Error(
 			"error retrieving session",
 			slog.Any("error", err),
 		)
 		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
-		return false
+		return false, err
 	}
 
 	return true

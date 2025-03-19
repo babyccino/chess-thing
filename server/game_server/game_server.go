@@ -106,7 +106,12 @@ func (server *GameServer) OnShutdown() {
 
 func (server *GameServer) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	if !server.authServer.IsAuthenticated(ctx, writer, req) {
+	authenticated, err := server.authServer.IsAuthenticated(ctx, writer, req)
+	if err != nil {
+		return
+	}
+	if !authenticated {
+		writer.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 	server.ServeMux.ServeHTTP(writer, req)

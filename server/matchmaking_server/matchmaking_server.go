@@ -151,7 +151,9 @@ func (server *MatchmakingServer) getQueue(format *Format) *Queue {
 	}
 	return queue
 }
-func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req *http.Request) {
+func (server *MatchmakingServer) UnrankedHandler(
+	writer http.ResponseWriter, req *http.Request,
+) {
 	ctx := req.Context()
 
 	format, err := getFormat(req)
@@ -160,7 +162,11 @@ func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req
 		return
 	}
 
-	if !server.authServer.IsAuthenticated(ctx, writer, req) {
+	authenticated, err := server.authServer.IsAuthenticated(ctx, writer, req)
+	if err != nil {
+		return
+	}
+	if !authenticated {
 		writer.WriteHeader(http.StatusUnauthorized)
 		return
 	}
