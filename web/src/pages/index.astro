@@ -43,9 +43,11 @@ const formats = [
         gameId: string
       }
 
+  // todo
   const basePath = "http://localhost:3000"
   const apiPath = "http://localhost:3000/api"
   const apiWsPath = "ws://localhost:3000/api"
+  const formatQueryKey = "format"
 
   function goTo(id: string) {
     const url = new URL(basePath + "/game")
@@ -93,7 +95,7 @@ const formats = [
     }
 
     const url = new URL(apiPath + "/matchmaking/unranked")
-    url.searchParams.append("format", format)
+    url.searchParams.append(formatQueryKey, format)
     const str = url.toString()
 
     console.log("making request to ", str)
@@ -109,7 +111,10 @@ const formats = [
       return
     }
 
-    const ws = new WebSocket(apiWsPath + "/matchmaking/unranked/subscribe")
+    const wsUrl = new URL(apiWsPath + "/matchmaking/unranked/subscribe")
+    wsUrl.searchParams.append(formatQueryKey, format)
+    const wsUrlStr = url.toString()
+    const ws = new WebSocket(wsUrlStr)
 
     ws.addEventListener(
       "open",
@@ -142,20 +147,6 @@ const formats = [
     }
     ws.addEventListener("message", onMessage, { signal })
   }
-
-  const formats = [
-    "1+0",
-    "1+1",
-    "2+1",
-    "3+0",
-    "3+2",
-    "5+3",
-    "10+0",
-    "10+5",
-    "15+20",
-    "30+0",
-    "custom",
-  ]
 
   document.addEventListener("DOMContentLoaded", () => {
     const buttons = document.getElementsByClassName("queue-btns")

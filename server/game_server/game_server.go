@@ -35,6 +35,9 @@ type Session struct {
 	players        [2]*subscriber
 	viewers        utility.Set[*subscriber]
 
+	increment  time.Duration
+	gameLength time.Duration
+
 	updatedAt time.Time
 	createdAt time.Time
 }
@@ -61,27 +64,38 @@ func NewGameServer(authServer *auth.AuthServer) *GameServer {
 	return server
 }
 
-func newSession() *Session {
+func newSession(
+	increment time.Duration,
+	gameLength time.Duration,
+) *Session {
 	board := board.NewBoard()
 	err := board.Init()
 	if err != nil {
 		panic(err)
 	}
+
 	return &Session{
 		id:             uuid.New(),
 		board:          board,
 		subscriberLock: sync.Mutex{},
 		viewers:        utility.NewSet[*subscriber](),
-		createdAt:      time.Now(),
-		updatedAt:      time.Now(),
+
+		increment:  increment,
+		gameLength: gameLength,
+
+		createdAt: time.Now(),
+		updatedAt: time.Now(),
 	}
 }
 
-func (server *GameServer) NewSession() uuid.UUID {
+func (server *GameServer) NewSession(
+	increment time.Duration,
+	gameLength time.Duration,
+) uuid.UUID {
 	server.sessionsLock.Lock()
 	defer server.sessionsLock.Unlock()
 
-	session := newSession()
+	session := newSession(increment, gameLength)
 	server.sessions[session.id] = session
 	return session.id
 }

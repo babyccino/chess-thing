@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,11 +20,34 @@ import (
 	"github.com/google/uuid"
 )
 
+type Format struct {
+	Increment  time.Duration
+	GameLength time.Duration
+}
+
+type Queue struct {
+	lock  sync.Mutex
+	queue []*player
+}
+
+func newQueue() *Queue {
+	return &Queue{
+		lock:  sync.Mutex{},
+		queue: make([]*player, 0),
+	}
+}
+
+func (queue *Queue) popQueue() *player {
+	player := queue.queue[0]
+	queue.queue = queue.queue[1:]
+	return player
+}
+
+type QueueMap map[Format]*Queue
 type MatchmakingServer struct {
 	ServeMux   *http.ServeMux
 	gameServer *game_server.GameServer
-	queueLock  sync.Mutex
-	queue      []*player
+	queues     QueueMap
 	db         *model.Queries
 	authServer *auth.AuthServer
 }
@@ -54,8 +78,7 @@ func NewMatchmakingServer(gameServer *game_server.GameServer, db *model.Queries,
 	serveMux := http.NewServeMux()
 	server := &MatchmakingServer{
 		ServeMux:   serveMux,
-		queue:      make([]*player, 0),
-		queueLock:  sync.Mutex{},
+		queues:     make(QueueMap),
 		gameServer: gameServer,
 		db:         db,
 		authServer: authServer,
@@ -84,28 +107,69 @@ type QueueResponse struct {
 	GameId string `json:"gameId,omitempty"`
 }
 
-func (server *MatchmakingServer) popQueue() *player {
-	player := server.queue[0]
-	server.queue = server.queue[1:]
-	return player
-}
-
 func (player *player) write(ctx context.Context, bytes []byte) error {
 	return player.Conn.Write(ctx,
 		websocket.MessageText,
 		bytes)
 }
 
+const formatQueryKey = "format"
+
+func getFormat(req *http.Request) (Format, error) {
+	format := req.URL.Query().Get(formatQueryKey)
+	if format == "" {
+		return Format{}, errors.New("no format found")
+	}
+	if format == "custom" {
+		return Format{}, nil
+	}
+	before, after, found := strings.Cut(format, "+")
+	if !found {
+		return Format{}, errors.New("format in wrong format")
+	}
+	beforeNum, err := strconv.ParseInt(before, 10, 64) // 10 is base 10, 64 is bit size (int64)
+	if err != nil {
+		return Format{}, err
+	}
+	afterNum, err := strconv.ParseInt(after, 10, 64) // 10 is base 10, 64 is bit size (int64)
+	if err != nil {
+		return Format{}, err
+	}
+
+	return Format{
+			GameLength: time.Minute * time.Duration(beforeNum),
+			Increment:  time.Minute * time.Duration(afterNum),
+		},
+		nil
+}
+
+func (server *MatchmakingServer) getQueue(format *Format) *Queue {
+	queue, found := server.queues[*format]
+	if !found {
+		queue = newQueue()
+		server.queues[*format] = queue
+	}
+	return queue
+}
 func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	if !server.authServer.IsAuthenticated(ctx, writer, req) {
+
+	format, err := getFormat(req)
+	if err != nil {
+		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	server.queueLock.Lock()
+	if !server.authServer.IsAuthenticated(ctx, writer, req) {
+		writer.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 
-	if len(server.queue) == 0 {
-		server.queueLock.Unlock()
+	queue := server.getQueue(&format)
+	queue.lock.Lock()
+
+	if len(queue.queue) == 0 {
+		queue.lock.Unlock()
 
 		bytes, err := json.Marshal(QueueResponse{Found: false})
 		if err != nil {
@@ -118,10 +182,10 @@ func (server *MatchmakingServer) UnrankedHandler(writer http.ResponseWriter, req
 		return
 	}
 
-	player := server.popQueue()
-	server.queueLock.Unlock()
+	player := queue.popQueue()
+	queue.lock.Unlock()
 
-	gameId := server.gameServer.NewSession()
+	gameId := server.gameServer.NewSession(format.Increment, format.GameLength)
 
 	bytes, err := json.Marshal(QueueResponse{true, gameId.String()})
 	if err != nil {
@@ -185,9 +249,15 @@ func (server *MatchmakingServer) Subscribe(ctx context.Context,
 	// ctx = conn.CloseRead(ctx)
 	player := newPlayer(conn, server)
 
-	server.queueLock.Lock()
-	server.queue = append(server.queue, player)
-	server.queueLock.Unlock()
+	format, err := getFormat(req)
+	if err != nil {
+		return err
+	}
+
+	queue := server.getQueue(&format)
+	queue.lock.Lock()
+	queue.queue = append(queue.queue, player)
+	queue.lock.Unlock()
 
 	ctx = context.WithoutCancel(ctx)
 	go player.initWrite(ctx)
