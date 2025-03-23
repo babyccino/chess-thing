@@ -2,10 +2,13 @@
 import { ClientRouter } from "astro:transitions"
 import { Icon } from "astro-icon/components"
 
+const profileContainerId = "profileContainer"
 const profileId = "profile"
+const emailId = "email"
 const iconId = "icon"
 const loginId = "login"
 const loginUrl = "http://localhost:3000/api/auth/login"
+const logoutUrl = "http://localhost:3000/api/auth/logout"
 const indexUrl = "http://localhost:3000"
 ---
 
@@ -19,8 +22,8 @@ const indexUrl = "http://localhost:3000"
     <title>Chess baby</title>
     <ClientRouter />
   </head>
-  <body class="dark:bg-gray-950 dark:text-gray-50">
-    <div class="relative flex flex-col flex-nowrap">
+  <body class="dark:bg-gray-950 dark:text-gray-50 w-screen overflow-x-hidden">
+    <div class="relative flex flex-col flex-nowrap min-h-screen">
       <header transition:persist="header">
         <nav id="separator-sidebar" class="p-2 px-4 flex items-center" aria-label="Sidebar">
           <h1>Corner Chess</h1>
@@ -28,14 +31,27 @@ const indexUrl = "http://localhost:3000"
           <ul class="font-medium ml-2 grow flex items-center">
             <a
               href={indexUrl}
-              class="text-muted-foreground ml-3 px-2 py-1 text-xs font-light rounded-md hover:bg-white/10 transition-colors"
+              class="ml-3 px-2 py-1 text-xs font-light rounded-md hover:bg-white/10 transition-colors"
             >
               Lobby
             </a>
             <div class="grow"></div>
-            <div class="text-muted-foreground ml-3 text-xs font-light justify-self-end">
+            <div class="ml-3 text-xs font-light justify-self-end">
               <Icon id={iconId} name="svg-spinners:3-dots-fade" />
-              <h4 id={profileId} class="hidden"></h4>
+              <div
+                id={profileContainerId}
+                class="group relative hidden flex items-baseline flex-row gap-2"
+              >
+                <a href={logoutUrl} class="hover hover:bg-white/10 p-2 rounded-md"> Logout </a>
+                <h4 id={profileId}></h4>
+
+                <div
+                  class="hidden group-hover:block absolute right-0 border border-gray-500 rounded-md p-2 dark:bg-gray-800"
+                  style="top: calc(100% + 0.5rem)"
+                >
+                  <p id={emailId}></p>
+                </div>
+              </div>
               <a id={loginId} class="hidden" href={loginUrl}>Login</a>
             </div>
           </ul>
@@ -44,7 +60,7 @@ const indexUrl = "http://localhost:3000"
 
       <div class="hidden w-64 sm:block" transition:persist="header-blocker"></div>
 
-      <main class="flex min-h-screen flex-1 flex-col items-center">
+      <main class="flex flex-1 flex-col items-center">
         <slot />
       </main>
     </div>
@@ -72,7 +88,9 @@ const indexUrl = "http://localhost:3000"
     locale: string
   }
 
+  const profileContainerId = "profileContainer"
   const profileId = "profile"
+  const emailId = "email"
   const iconId = "icon"
   const loginId = "login"
 
@@ -97,10 +115,13 @@ const indexUrl = "http://localhost:3000"
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    const profileContainer = document.getElementById(profileContainerId)
     const profile = document.getElementById(profileId)
+    const email = document.getElementById(emailId)
     const icon = document.getElementById(iconId)
     const login = document.getElementById(loginId)
-    if (!profile || !icon || !login) {
+
+    if (!profile || !icon || !login || !email || !profileContainer) {
       throw new Error()
     }
 
@@ -112,7 +133,8 @@ const indexUrl = "http://localhost:3000"
       return
     }
 
-    profile.classList.remove("hidden")
+    profileContainer.classList.remove("hidden")
     profile.innerText = user.name
+    email.innerText = user.email
   })
 </script>

@@ -113,7 +113,8 @@ const formats = [
 
     const wsUrl = new URL(apiWsPath + "/matchmaking/unranked/subscribe")
     wsUrl.searchParams.append(formatQueryKey, format)
-    const wsUrlStr = url.toString()
+    const wsUrlStr = wsUrl.toString()
+    console.log("connecting to ws:", wsUrlStr)
     const ws = new WebSocket(wsUrlStr)
 
     ws.addEventListener(

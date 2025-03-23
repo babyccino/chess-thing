@@ -43,7 +43,7 @@
   onMount(() => {
     console.log("creating ws")
     const id = getId()
-    ws = new WebSocket(`ws://localhost:3000/game/subscribe/${id}`)
+    ws = new WebSocket(`ws://localhost:3000/api/game/subscribe/${id}`)
 
     ws.addEventListener("open", event => {
       console.log("open:", event)
