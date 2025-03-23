@@ -45,6 +45,7 @@ func NewAuthServer(db *model.Queries, environment *env.Env, path string) *AuthSe
 	}
 
 	server.ServeMux.HandleFunc("/login", server.LoginHandler)
+	server.ServeMux.HandleFunc("/logout", server.LogoutHandler)
 	server.ServeMux.HandleFunc("/callback", server.CallbackHandler)
 	server.ServeMux.HandleFunc("/user", server.UserHandler)
 
@@ -268,20 +269,27 @@ func getSessionId(writer http.ResponseWriter, req *http.Request) (uuid.UUID, err
 	return sessionId, err
 }
 
-func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, req *http.Request) {
-	sessionId, err := getSessionId(writer, req)
-	if err != nil {
-		return
-	}
-
+func unsetCookie(writer http.ResponseWriter, key string) {
 	http.SetCookie(writer, &http.Cookie{
-		Name:     cookieKeyState,
+		Name:     key,
 		Path:     "/",
 		MaxAge:   UnsetMaxAge,
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, req *http.Request) {
+	sessionId, err := getSessionId(writer, req)
+	if err != nil {
+		return
+	}
+
+	unsetCookie(writer, cookieKeyState)
+	unsetCookie(writer, CookieKeySession)
+	unsetCookie(writer, cookieKeyUser)
+
 	http.Redirect(writer, req, "/", http.StatusTemporaryRedirect)
 
 	ctx := req.Context()
