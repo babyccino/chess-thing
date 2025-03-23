@@ -55,7 +55,6 @@ SELECT
   u.created_at as user_created_at,
   u.updated_at as user_updated_at,
   s.id as session_id,
-  s.user_id as session_user_id,
   s.access_token as session_access_token,
   s.refresh_token as session_refresh_token,
   s.expires_at as session_expires_at,

@@ -70,9 +70,9 @@ func (server *AuthServer) createSession(
 	accessToken string,
 	refreshToken string,
 	expiresAt time.Time,
-) (string, error) {
+) (uuid.UUID, error) {
 	params := model.CreateSessionParams{
-		ID:           uuid.NewString(),
+		ID:           uuid.New(),
 		UserID:       userID.String(),
 		AccessToken:  accessToken,
 		RefreshToken: nullString(refreshToken),
@@ -86,7 +86,7 @@ func (server *AuthServer) createSession(
 			slog.Any("params", params),
 		)
 		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
-		return "", err
+		return uuid.UUID{}, err
 	}
 	return dbSessionId, err
 }
@@ -208,7 +208,7 @@ func (server *AuthServer) CallbackHandler(writer http.ResponseWriter, req *http.
 	if err == sql.ErrNoRows {
 		dbUser, err = server.db.CreateUser(ctx,
 			model.CreateUserParams{
-				ID:       uuid.NewString(),
+				ID:       uuid.New(),
 				Username: nullString(userInfo.Name),
 				Email:    userInfo.Email,
 			})
@@ -229,21 +229,9 @@ func (server *AuthServer) CallbackHandler(writer http.ResponseWriter, req *http.
 		return
 	}
 
-	userId, err := uuid.Parse(dbUser.ID)
-	if err != nil {
-		http.Error(writer, "Error paring uuid",
-			http.StatusInternalServerError)
-		slog.Error(
-			"uuid parsing error",
-			slog.Any("error", err),
-			slog.String("uuid", dbUser.ID),
-		)
-		return
-	}
-
 	dbSessionId, err := server.createSession(
 		writer, ctx,
-		userId,
+		dbUser.ID,
 		token.AccessToken,
 		token.RefreshToken,
 		token.Expiry,
@@ -257,17 +245,32 @@ func (server *AuthServer) CallbackHandler(writer http.ResponseWriter, req *http.
 	http.SetCookie(writer, makeCookie(cookieKeyUser,
 		base64.URLEncoding.EncodeToString(userBytes), false))
 	http.SetCookie(writer,
-		makeCookie(CookieKeySession, dbSessionId, true))
+		makeCookie(CookieKeySession, dbSessionId.String(), true))
 
 	// todo redirect
 	http.Redirect(writer, req, "http://localhost:3000", http.StatusTemporaryRedirect)
 }
 
-func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	cookie, err := r.Cookie(CookieKeySession)
+func getSessionId(writer http.ResponseWriter, req *http.Request) (uuid.UUID, error) {
+	cookie, err := req.Cookie(CookieKeySession)
 	if err != nil {
 		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
+		return uuid.UUID{}, err
+	}
+
+	sessionId, err := uuid.Parse(cookie.Value)
+	if err != nil {
+		http.Error(writer,
+			"session id was not able to be parsed into uuid",
+			http.StatusInternalServerError)
+		return uuid.UUID{}, err
+	}
+	return sessionId, err
+}
+
+func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, req *http.Request) {
+	sessionId, err := getSessionId(writer, req)
+	if err != nil {
 		return
 	}
 
@@ -279,9 +282,10 @@ func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, r *http.Requ
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(writer, r, "/", http.StatusTemporaryRedirect)
+	http.Redirect(writer, req, "/", http.StatusTemporaryRedirect)
 
-	err = server.db.DeleteSessionsById(ctx, cookie.Value)
+	ctx := req.Context()
+	err = server.db.DeleteSessionsById(ctx, sessionId)
 	if err == sql.ErrNoRows {
 		return
 	} else if err != nil {
@@ -297,16 +301,15 @@ func (server *AuthServer) LogoutHandler(writer http.ResponseWriter, r *http.Requ
 func (server *AuthServer) RefreshToken(
 	token *model.Session,
 	writer http.ResponseWriter,
-	r *http.Request,
+	req *http.Request,
 ) {
-	ctx := r.Context()
-	cookie, err := r.Cookie(CookieKeySession)
+	sessionId, err := getSessionId(writer, req)
 	if err != nil {
-		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
 		return
 	}
 
-	session, err := server.db.GetSessionById(ctx, cookie.Value)
+	ctx := req.Context()
+	session, err := server.db.GetSessionById(ctx, sessionId)
 	if err != nil {
 		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 		return
@@ -355,19 +358,18 @@ func (server *AuthServer) RefreshToken(
 	}
 
 	http.SetCookie(writer,
-		makeCookie(CookieKeySession, dbSession, true))
-	http.Redirect(writer, r, "/", http.StatusTemporaryRedirect)
+		makeCookie(CookieKeySession, dbSession.String(), true))
+	http.Redirect(writer, req, "/", http.StatusTemporaryRedirect)
 }
 
-func (server *AuthServer) RefreshHandler(writer http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	cookie, err := r.Cookie(CookieKeySession)
+func (server *AuthServer) RefreshHandler(writer http.ResponseWriter, req *http.Request) {
+	sessionId, err := getSessionId(writer, req)
 	if err != nil {
-		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
 		return
 	}
 
-	session, err := server.db.GetSessionById(ctx, cookie.Value)
+	ctx := req.Context()
+	session, err := server.db.GetSessionById(ctx, sessionId)
 	if err != nil {
 		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 		return
@@ -416,19 +418,18 @@ func (server *AuthServer) RefreshHandler(writer http.ResponseWriter, r *http.Req
 	}
 
 	http.SetCookie(writer,
-		makeCookie(CookieKeySession, dbSession, true))
-	http.Redirect(writer, r, "/", http.StatusTemporaryRedirect)
+		makeCookie(CookieKeySession, dbSession.String(), true))
+	http.Redirect(writer, req, "/", http.StatusTemporaryRedirect)
 }
 
 func (server *AuthServer) UserHandler(writer http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	cookie, err := req.Cookie(CookieKeySession)
+	sessionId, err := getSessionId(writer, req)
 	if err != nil {
-		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
 		return
 	}
 
-	sessionAndUser, err := server.db.GetSessionByIdAndUser(ctx, cookie.Value)
+	sessionAndUser, err := server.db.GetSessionByIdAndUser(ctx, sessionId)
 	if err != nil {
 		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 		return
@@ -443,15 +444,17 @@ func (server *AuthServer) UserHandler(writer http.ResponseWriter, req *http.Requ
 	writer.WriteHeader(http.StatusOK)
 }
 
-func (server *AuthServer) GetUserSession(ctx context.Context,
-	writer http.ResponseWriter, req *http.Request) (model.GetSessionByIdAndUserRow, error) {
-	cookie, err := req.Cookie(CookieKeySession)
+func (server *AuthServer) GetUserSession(
+	ctx context.Context,
+	writer http.ResponseWriter,
+	req *http.Request,
+) (model.GetSessionByIdAndUserRow, error) {
+	sessionId, err := getSessionId(writer, req)
 	if err != nil {
-		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
 		return model.GetSessionByIdAndUserRow{}, err
 	}
 
-	sessionAndUser, err := server.db.GetSessionByIdAndUser(ctx, cookie.Value)
+	sessionAndUser, err := server.db.GetSessionByIdAndUser(ctx, sessionId)
 	if err != nil {
 		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
 		return model.GetSessionByIdAndUserRow{}, err
@@ -463,13 +466,12 @@ func (server *AuthServer) GetUserSession(ctx context.Context,
 func (server *AuthServer) IsAuthenticated(
 	ctx context.Context, writer http.ResponseWriter, req *http.Request,
 ) (bool, error) {
-	sessionId, err := req.Cookie(CookieKeySession)
+	sessionId, err := getSessionId(writer, req)
 	if err != nil {
-		http.Error(writer, "Session cookie not found", http.StatusBadRequest)
 		return false, err
 	}
 
-	_, err = server.db.GetSessionExists(ctx, sessionId.Value)
+	_, err = server.db.GetSessionExists(ctx, sessionId)
 	if err == sql.ErrNoRows {
 		http.Error(writer, "No db session found", http.StatusUnauthorized)
 		return false, err
@@ -482,5 +484,5 @@ func (server *AuthServer) IsAuthenticated(
 		return false, err
 	}
 
-	return true
+	return true, nil
 }

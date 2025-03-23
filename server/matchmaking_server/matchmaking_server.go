@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -27,17 +26,21 @@ type Format struct {
 
 type Queue struct {
 	lock  sync.Mutex
-	queue []*player
+	queue []*Player
 }
 
 func newQueue() *Queue {
 	return &Queue{
 		lock:  sync.Mutex{},
-		queue: make([]*player, 0),
+		queue: make([]*Player, 0),
 	}
 }
 
-func (queue *Queue) popQueue() *player {
+func (queue *Queue) push(player *Player) {
+	queue.queue = append(queue.queue, player)
+}
+
+func (queue *Queue) pop() *Player {
 	player := queue.queue[0]
 	queue.queue = queue.queue[1:]
 	return player
@@ -47,34 +50,41 @@ type QueueMap map[Format]*Queue
 type MatchmakingServer struct {
 	ServeMux   *http.ServeMux
 	gameServer *game_server.GameServer
+	queueLock  sync.Mutex
 	queues     QueueMap
 	db         *model.Queries
 	authServer *auth.AuthServer
 }
 
-type player struct {
+type Player struct {
 	id          uuid.UUID
 	elo         int
 	params      string
 	Conn        *websocket.Conn
 	closed      bool
 	doneChannel chan struct{}
-	server      *MatchmakingServer
+	queue       *Queue
 }
 
-func newPlayer(conn *websocket.Conn, server *MatchmakingServer) *player {
-	return &player{
-		id:          uuid.New(),
+func newPlayer(
+	conn *websocket.Conn, queue *Queue, userId uuid.UUID,
+) *Player {
+	return &Player{
+		id:          userId,
 		elo:         0,
 		params:      "",
 		Conn:        conn,
 		closed:      false,
 		doneChannel: make(chan struct{}),
-		server:      server,
+		queue:       queue,
 	}
 }
 
-func NewMatchmakingServer(gameServer *game_server.GameServer, db *model.Queries, authServer *auth.AuthServer) *MatchmakingServer {
+func NewMatchmakingServer(
+	gameServer *game_server.GameServer,
+	db *model.Queries,
+	authServer *auth.AuthServer,
+) *MatchmakingServer {
 	serveMux := http.NewServeMux()
 	server := &MatchmakingServer{
 		ServeMux:   serveMux,
@@ -107,10 +117,9 @@ type QueueResponse struct {
 	GameId string `json:"gameId,omitempty"`
 }
 
-func (player *player) write(ctx context.Context, bytes []byte) error {
-	return player.Conn.Write(ctx,
-		websocket.MessageText,
-		bytes)
+func (player *Player) write(ctx context.Context, bytes []byte) error {
+	return writeTimeout(ctx, 3*time.Second,
+		player.Conn, bytes)
 }
 
 const formatQueryKey = "format"
@@ -137,37 +146,35 @@ func getFormat(req *http.Request) (Format, error) {
 	}
 
 	return Format{
-			GameLength: time.Minute * time.Duration(beforeNum),
-			Increment:  time.Minute * time.Duration(afterNum),
-		},
-		nil
+		GameLength: time.Minute * time.Duration(beforeNum),
+		Increment:  time.Minute * time.Duration(afterNum),
+	}, nil
 }
 
 func (server *MatchmakingServer) getQueue(format *Format) *Queue {
+	server.queueLock.Lock()
 	queue, found := server.queues[*format]
 	if !found {
 		queue = newQueue()
 		server.queues[*format] = queue
 	}
+	server.queueLock.Unlock()
+
 	return queue
 }
+
 func (server *MatchmakingServer) UnrankedHandler(
 	writer http.ResponseWriter, req *http.Request,
 ) {
-	ctx := req.Context()
-
 	format, err := getFormat(req)
 	if err != nil {
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	authenticated, err := server.authServer.IsAuthenticated(ctx, writer, req)
+	ctx := req.Context()
+	userSession, err := server.authServer.GetUserSession(ctx, writer, req)
 	if err != nil {
-		return
-	}
-	if !authenticated {
-		writer.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
@@ -188,10 +195,15 @@ func (server *MatchmakingServer) UnrankedHandler(
 		return
 	}
 
-	player := queue.popQueue()
+	player := queue.pop()
 	queue.lock.Unlock()
 
-	gameId := server.gameServer.NewSession(format.Increment, format.GameLength)
+	gameId := server.gameServer.NewSession(
+		player.id,
+		userSession.UserID,
+		format.Increment,
+		format.GameLength,
+	)
 
 	bytes, err := json.Marshal(QueueResponse{true, gameId.String()})
 	if err != nil {
@@ -204,11 +216,16 @@ func (server *MatchmakingServer) UnrankedHandler(
 		panic("error marshalling json")
 	}
 
-	writer.Header().Add("Content-Type", "application/json")
-	writer.Write(bytes)
+	err = player.write(ctx, bytes)
+	player.closeNow(ctx, err)
 
-	player.write(ctx, bytes)
-	player.closeNow(ctx, nil)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		writer.Write([]byte("{\"found\":false}"))
+	} else {
+		writer.Header().Add("Content-Type", "application/json")
+		writer.Write(bytes)
+	}
 }
 
 func (server *MatchmakingServer) UnrankedQueueHandler(writer http.ResponseWriter, req *http.Request) {
@@ -218,7 +235,7 @@ func (server *MatchmakingServer) UnrankedQueueHandler(writer http.ResponseWriter
 		return
 	}
 
-	err = server.Subscribe(ctx, writer, req, session.SessionUserID)
+	err = server.Subscribe(ctx, writer, req, session.UserID)
 	if err == nil {
 		return
 	}
@@ -240,29 +257,34 @@ func (server *MatchmakingServer) MarkDelete(id uuid.UUID) error {
 
 // subscribeHandler accepts the WebSocket connection and then subscribes
 // it to all future messages.
-func (server *MatchmakingServer) Subscribe(ctx context.Context,
-	writer http.ResponseWriter, req *http.Request, userId string) error {
-	// todo accept header
-	conn, err := websocket.Accept(writer, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
-	if err != nil {
-		return err
-	}
-
-	// todo make session id and add to context
-	slog.InfoContext(ctx, "client subscribed to unranked queue")
-
-	// todo not sure why having this causes connection to be closed
-	// ctx = conn.CloseRead(ctx)
-	player := newPlayer(conn, server)
-
+func (server *MatchmakingServer) Subscribe(
+	ctx context.Context,
+	writer http.ResponseWriter,
+	req *http.Request,
+	userId uuid.UUID,
+) error {
 	format, err := getFormat(req)
 	if err != nil {
 		return err
 	}
 
+	// todo accept header
+	conn, err := websocket.Accept(writer, req,
+		&websocket.AcceptOptions{OriginPatterns: []string{"*"}})
+	if err != nil {
+		return err
+	}
+	// todo make session id and add to context
+	slog.InfoContext(ctx, "client subscribed to unranked queue")
+
+	// todo not sure why having this causes connection to be closed
+	// ctx = conn.CloseRead(ctx)
+
 	queue := server.getQueue(&format)
 	queue.lock.Lock()
-	queue.queue = append(queue.queue, player)
+	// todo handle player joining queue more than once?
+	player := newPlayer(conn, queue, userId)
+	queue.push(player)
 	queue.lock.Unlock()
 
 	ctx = context.WithoutCancel(ctx)
@@ -271,14 +293,17 @@ func (server *MatchmakingServer) Subscribe(ctx context.Context,
 	return nil
 }
 
-func writeTimeout(ctx context.Context, timeout time.Duration, wsConn *websocket.Conn, msg []byte) error {
+func writeTimeout(
+	ctx context.Context, timeout time.Duration,
+	wsConn *websocket.Conn, msg []byte,
+) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	return wsConn.Write(ctx, websocket.MessageText, msg)
 }
 
-func (player *player) closeNow(ctx context.Context, err error) {
+func (player *Player) closeNow(ctx context.Context, err error) {
 	if player.doneChannel != nil {
 		player.doneChannel <- struct{}{}
 	}
@@ -288,15 +313,15 @@ func (player *player) closeNow(ctx context.Context, err error) {
 		logError(ctx, err)
 	}
 	player.Conn.CloseNow()
-	player.server.MarkDelete(player.id)
+	player.queue.MarkDelete(player.id)
 }
 
-func (player *player) closeSlow() {
+func (player *Player) closeSlow() {
 	player.closed = true
 	if player.Conn != nil {
-		player.Conn.Close(websocket.StatusPolicyViolation, "connection too slow to keep up with messages")
+		err := player.Conn.Close(websocket.StatusPolicyViolation, "too slow to keep up with messages")
 	}
-	player.server.MarkDelete(player.id)
+	player.queue.MarkDelete(player.id)
 }
 
 const (
@@ -304,11 +329,9 @@ const (
 	pingInterval = (pongWait * 9) / 10
 )
 
-func (player *player) initWrite(ctx context.Context) {
+func (player *Player) initWrite(ctx context.Context) {
 	pinger := time.NewTicker(pingInterval)
-	var err error
 	defer pinger.Stop()
-	defer player.closeNow(ctx, err)
 
 	for {
 		select {
@@ -316,38 +339,29 @@ func (player *player) initWrite(ctx context.Context) {
 			return
 		case <-pinger.C:
 			slog.DebugContext(ctx, "pinging")
+
 			ctx, cancel := context.WithTimeout(ctx, pongWait)
 			defer cancel()
-			err2 := player.Conn.Ping(ctx)
-			if err2 != nil {
-				err = err2
+			err := player.Conn.Ping(ctx)
+			if err != nil {
+				player.closeNow(ctx, err)
 				return
 			}
 		case <-ctx.Done():
-			err = ctx.Err()
+			player.closeNow(ctx, nil)
 			return
 		}
 	}
 }
 
-func getId(writer http.ResponseWriter, req *http.Request) (string, error) {
-	id := strings.TrimPrefix(req.URL.Path, "/subscribe/")
-	if id == "" {
-		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return "", errors.New("no campaign id in request")
-	}
-
-	return id, nil
-}
-
-func dumpMap(space string, m map[string]interface{}) {
-	for k, v := range m {
-		if mv, ok := v.(map[string]interface{}); ok {
-			fmt.Printf("{ \"%v\": \n", k)
-			dumpMap(space+"\t", mv)
-			fmt.Printf("}\n")
-		} else {
-			fmt.Printf("%v %v : %v\n", space, k, v)
-		}
-	}
-}
+// func dumpMap(space string, m map[string]any) {
+// 	for k, v := range m {
+// 		if mv, ok := v.(map[string]any); ok {
+// 			fmt.Printf("{ \"%v\": \n", k)
+// 			dumpMap(space+"\t", mv)
+// 			fmt.Printf("}\n")
+// 		} else {
+// 			fmt.Printf("%v %v : %v\n", space, k, v)
+// 		}
+// 	}
+// }

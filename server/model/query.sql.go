@@ -9,6 +9,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const createSession = `-- name: CreateSession :one
@@ -25,14 +27,14 @@ VALUES
 `
 
 type CreateSessionParams struct {
-	ID           string
+	ID           uuid.UUID
 	UserID       string
 	AccessToken  string
 	RefreshToken sql.NullString
 	ExpiresAt    time.Time
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (string, error) {
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (uuid.UUID, error) {
 	row := q.db.QueryRowContext(ctx, createSession,
 		arg.ID,
 		arg.UserID,
@@ -40,7 +42,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (s
 		arg.RefreshToken,
 		arg.ExpiresAt,
 	)
-	var id string
+	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
 }
@@ -53,7 +55,7 @@ VALUES
 `
 
 type CreateUserParams struct {
-	ID       string
+	ID       uuid.UUID
 	Username sql.NullString
 	Email    string
 }
@@ -77,7 +79,7 @@ WHERE
   id = ?
 `
 
-func (q *Queries) DeleteSessionsById(ctx context.Context, id string) error {
+func (q *Queries) DeleteSessionsById(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, deleteSessionsById, id)
 	return err
 }
@@ -104,7 +106,7 @@ LIMIT
   1
 `
 
-func (q *Queries) GetSessionById(ctx context.Context, id string) (Session, error) {
+func (q *Queries) GetSessionById(ctx context.Context, id uuid.UUID) (Session, error) {
 	row := q.db.QueryRowContext(ctx, getSessionById, id)
 	var i Session
 	err := row.Scan(
@@ -127,7 +129,6 @@ SELECT
   u.created_at as user_created_at,
   u.updated_at as user_updated_at,
   s.id as session_id,
-  s.user_id as session_user_id,
   s.access_token as session_access_token,
   s.refresh_token as session_refresh_token,
   s.expires_at as session_expires_at,
@@ -143,13 +144,12 @@ LIMIT
 `
 
 type GetSessionByIdAndUserRow struct {
-	UserID                string
+	UserID                uuid.UUID
 	UserUsername          sql.NullString
 	UserEmail             string
 	UserCreatedAt         time.Time
 	UserUpdatedAt         time.Time
-	SessionID             string
-	SessionUserID         string
+	SessionID             uuid.UUID
 	SessionAccessToken    string
 	SessionRefreshToken   sql.NullString
 	SessionExpiresAt      time.Time
@@ -157,7 +157,7 @@ type GetSessionByIdAndUserRow struct {
 	SessionLastAccessedAt time.Time
 }
 
-func (q *Queries) GetSessionByIdAndUser(ctx context.Context, id string) (GetSessionByIdAndUserRow, error) {
+func (q *Queries) GetSessionByIdAndUser(ctx context.Context, id uuid.UUID) (GetSessionByIdAndUserRow, error) {
 	row := q.db.QueryRowContext(ctx, getSessionByIdAndUser, id)
 	var i GetSessionByIdAndUserRow
 	err := row.Scan(
@@ -167,7 +167,6 @@ func (q *Queries) GetSessionByIdAndUser(ctx context.Context, id string) (GetSess
 		&i.UserCreatedAt,
 		&i.UserUpdatedAt,
 		&i.SessionID,
-		&i.SessionUserID,
 		&i.SessionAccessToken,
 		&i.SessionRefreshToken,
 		&i.SessionExpiresAt,
@@ -191,7 +190,7 @@ SELECT
   )
 `
 
-func (q *Queries) GetSessionExists(ctx context.Context, id string) (int64, error) {
+func (q *Queries) GetSessionExists(ctx context.Context, id uuid.UUID) (int64, error) {
 	row := q.db.QueryRowContext(ctx, getSessionExists, id)
 	var column_1 int64
 	err := row.Scan(&column_1)
@@ -233,7 +232,7 @@ LIMIT
   1
 `
 
-func (q *Queries) GetUserById(ctx context.Context, id string) (User, error) {
+func (q *Queries) GetUserById(ctx context.Context, id uuid.UUID) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserById, id)
 	var i User
 	err := row.Scan(

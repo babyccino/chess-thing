@@ -43,12 +43,27 @@ type Session struct {
 }
 
 type subscriber struct {
-	gameId      string
+	userId      uuid.UUID
 	events      chan Event
 	doneChannel chan struct{}
 	Conn        *websocket.Conn
 	closed      bool
 	session     *Session
+}
+
+func NewSubscriber(
+	userId uuid.UUID,
+	session *Session,
+) *subscriber {
+	return &subscriber{
+		userId:      userId,
+		events:      make(chan Event, 10),
+		doneChannel: make(chan struct{}),
+		session:     session,
+	}
+}
+func (subscriber *subscriber) init(Conn *websocket.Conn) {
+	subscriber.Conn = Conn
 }
 
 func NewGameServer(authServer *auth.AuthServer) *GameServer {
@@ -65,6 +80,8 @@ func NewGameServer(authServer *auth.AuthServer) *GameServer {
 }
 
 func newSession(
+	white uuid.UUID,
+	black uuid.UUID,
 	increment time.Duration,
 	gameLength time.Duration,
 ) *Session {
@@ -74,10 +91,12 @@ func newSession(
 		panic(err)
 	}
 
-	return &Session{
-		id:             uuid.New(),
-		board:          board,
+	session := &Session{
+		id:    uuid.New(),
+		board: board,
+
 		subscriberLock: sync.Mutex{},
+		players:        [2]*subscriber{},
 		viewers:        utility.NewSet[*subscriber](),
 
 		increment:  increment,
@@ -86,16 +105,21 @@ func newSession(
 		createdAt: time.Now(),
 		updatedAt: time.Now(),
 	}
+	session.players[0] = NewSubscriber(white, session)
+	session.players[1] = NewSubscriber(black, session)
+	return session
 }
 
 func (server *GameServer) NewSession(
+	white uuid.UUID,
+	black uuid.UUID,
 	increment time.Duration,
 	gameLength time.Duration,
 ) uuid.UUID {
 	server.sessionsLock.Lock()
 	defer server.sessionsLock.Unlock()
 
-	session := newSession(increment, gameLength)
+	session := newSession(white, black, increment, gameLength)
 	server.sessions[session.id] = session
 	return session.id
 }
@@ -182,28 +206,14 @@ func serialiseColour(colour board.Colour) string {
 	return retColour
 }
 
-func (session *Session) CreateConnectEvent(colour board.Colour) Event {
-	fen := session.board.Fen()
-	println(fen)
-	if colour == board.None {
-		return Event{
-			Type:        connectViewer,
-			Fen:         fen,
-			MoveHistory: moveList(session.board.MoveHistory),
-		}
-	} else {
-		return Event{
-			Type:        connect,
-			Fen:         fen,
-			MoveHistory: moveList(session.board.MoveHistory),
-			Colour:      serialiseColour(colour),
-			LegalMoves:  moveList(session.board.LegalMoves),
-		}
-	}
-}
-
 func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWriter, req *http.Request) error {
 	id, err := getId(writer, req)
+	if err != nil {
+		return err
+	}
+
+	// todo getting back a lot of useless data
+	authSession, err := server.authServer.GetUserSession(ctx, writer, req)
 	if err != nil {
 		return err
 	}
@@ -225,30 +235,12 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 		return err
 	}
 
-	sub := &subscriber{
-		events:      make(chan Event, 10),
-		doneChannel: make(chan struct{}),
-		Conn:        Conn,
-		session:     session,
-	}
-
-	// just make any connection either one of the players
-	// todo: obvs this is just for testing
 	session.subscriberLock.Lock()
-	colour := board.None
-	if session.players[0] == nil {
-		colour = board.White
-		session.players[0] = sub
-		slog.InfoContext(ctx, "added client to session as white player", slog.String("id", id.String()))
-	} else if session.players[1] == nil {
-		colour = board.Black
-		session.players[1] = sub
-		slog.InfoContext(ctx, "added client to session as black player", slog.String("id", id.String()))
-	} else {
-		colour = board.None
-		session.viewers.Add(sub)
-		slog.InfoContext(ctx, "added client to session as viewer", slog.String("id", id.String()))
-	}
+	// BIG TODO: handle reconnections/connection a second time
+	// i.e. a player opens a new tab with the game or even on a separate device?
+	// just make any connection either one of the players
+	sub, colour := session.getSubscriber(ctx, authSession.UserID)
+	sub.init(Conn)
 	session.subscriberLock.Unlock()
 
 	ctx = context.WithoutCancel(ctx)
@@ -269,9 +261,50 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	return nil
 }
 
+// Doesn't lock
+func (session *Session) getSubscriber(ctx context.Context, userId uuid.UUID) (*subscriber, board.Colour) {
+	// BIG TODO: handle reconnections/connection a second time
+	// i.e. a player opens a new tab with the game or even on a separate device?
+	// just make any connection either one of the players
+	if userId == session.players[0].userId {
+		slog.InfoContext(ctx, "added client to session as white player", slog.String("id", userId.String()))
+		return session.players[0], board.White
+	} else if userId == session.players[1].userId {
+		slog.InfoContext(ctx, "added client to session as black player", slog.String("id", userId.String()))
+		return session.players[1], board.Black
+	}
+
+	slog.InfoContext(ctx, "added client to session as viewer", slog.String("id", userId.String()))
+	sub := NewSubscriber(userId, session)
+	session.viewers.Add(sub)
+	return sub, board.None
+}
+
+func (session *Session) CreateConnectEvent(colour board.Colour) Event {
+	fen := session.board.Fen()
+	if colour == board.None {
+		return Event{
+			Type:        connectViewer,
+			Fen:         fen,
+			MoveHistory: moveList(session.board.MoveHistory),
+		}
+	} else {
+		return Event{
+			Type:        connect,
+			Fen:         fen,
+			MoveHistory: moveList(session.board.MoveHistory),
+			Colour:      serialiseColour(colour),
+			LegalMoves:  moveList(session.board.LegalMoves),
+		}
+	}
+}
+
 func (session *Session) DeleteSubscriber(sub *subscriber) {
-	if session.players[0] == sub || sub.session.players[1] == sub {
-		session.end()
+	if session.players[0] == sub {
+		session.end(board.Black)
+		return
+	} else if sub.session.players[1] == sub {
+		session.end(board.White)
 		return
 	}
 
@@ -281,7 +314,14 @@ func (session *Session) DeleteSubscriber(sub *subscriber) {
 	session.viewers.Remove(sub)
 }
 
-func (session *Session) end() {
+func (session *Session) end(winner board.Colour) {
+	switch winner {
+	case board.White:
+		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "w"})
+	case board.Black:
+		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "b"})
+	default:
+	}
 }
 
 func (session *Session) publishImpl(event Event, sub *subscriber) {
@@ -316,6 +356,47 @@ func (session *Session) publish(sub *subscriber, event Event) {
 		slog.Int("count", count))
 }
 
+func (session *Session) handleError(err error) {
+	session.publish(nil, Event{Type: errorEvent, Text: err.Error()})
+	for _, player := range session.players {
+		player.closeNow(nil, err)
+	}
+	for viewer := range session.viewers.Iter() {
+		viewer.closeNow(nil, err)
+	}
+}
+
+func (session *Session) handleMove(sub *subscriber, move board.Move) {
+	err := session.board.MakeMove(move)
+	if err != nil {
+		session.handleError(err)
+	}
+
+	serialisedLegalMoves := board.SerialiseMoveList(session.board.LegalMoves)
+	event := Event{
+		Type:       "move",
+		Move:       move.Serialise(),
+		Fen:        session.board.Fen(),
+		LegalMoves: serialisedLegalMoves,
+	}
+	session.publish(sub, event)
+
+	win := session.board.HasWinner()
+	switch win {
+	case board.BlackWin:
+		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "b"})
+	case board.WhiteWin:
+		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "w"})
+	case board.Stalemate:
+		session.publish(nil, Event{Type: "end", Outcome: "stalemate", Victor: "w"})
+	case board.MoveRuleDraw:
+		session.publish(nil, Event{Type: "end", Outcome: "stalemate", Victor: "w"})
+	case board.NoWin:
+		fallthrough
+	default:
+	}
+}
+
 func writeTimeout(ctx context.Context, timeout time.Duration, wsConn *websocket.Conn, msg []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -327,6 +408,7 @@ func (sub *subscriber) closeNow(ctx context.Context, err error) {
 	if sub.doneChannel != nil {
 		sub.doneChannel <- struct{}{}
 	}
+	sub.closed = true
 
 	slog.Info("closing")
 	if err != nil {
@@ -337,9 +419,17 @@ func (sub *subscriber) closeNow(ctx context.Context, err error) {
 }
 
 func (sub *subscriber) closeSlow() {
+	if sub.doneChannel != nil {
+		sub.doneChannel <- struct{}{}
+	}
 	sub.closed = true
+
+	slog.Info("closing")
 	if sub.Conn != nil {
-		sub.Conn.Close(websocket.StatusPolicyViolation, "connection too slow to keep up with messages")
+		err := sub.Conn.Close(websocket.StatusPolicyViolation, "connection too slow to keep up with messages")
+		if err != nil {
+			err = sub.Conn.CloseNow()
+		}
 	}
 	sub.session.DeleteSubscriber(sub)
 }
@@ -388,47 +478,6 @@ func (sub *subscriber) initRead(ctx context.Context) {
 	}
 }
 
-func (session *Session) handleError(err error) {
-	session.publish(nil, Event{Type: errorEvent, Text: err.Error()})
-	for _, player := range session.players {
-		player.closeNow(nil, err)
-	}
-	for viewer := range session.viewers.Iter() {
-		viewer.closeNow(nil, err)
-	}
-}
-
-func (session *Session) handleMove(sub *subscriber, move board.Move) {
-	err := session.board.MakeMove(move)
-	if err != nil {
-		session.handleError(err)
-	}
-
-	serialisedLegalMoves := board.SerialiseMoveList(session.board.LegalMoves)
-	event := Event{
-		Type:       "move",
-		Move:       move.Serialise(),
-		Fen:        session.board.Fen(),
-		LegalMoves: serialisedLegalMoves,
-	}
-	session.publish(sub, event)
-
-	win := session.board.HasWinner()
-	switch win {
-	case board.BlackWin:
-		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "b"})
-	case board.WhiteWin:
-		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "w"})
-	case board.Stalemate:
-		session.publish(nil, Event{Type: "end", Outcome: "stalemate", Victor: "w"})
-	case board.MoveRuleDraw:
-		session.publish(nil, Event{Type: "end", Outcome: "stalemate", Victor: "w"})
-	case board.NoWin:
-		fallthrough
-	default:
-	}
-}
-
 const (
 	pongWait     = 5 * time.Second
 	pingInterval = (pongWait * 9) / 10
@@ -450,31 +499,32 @@ func (sub *subscriber) write(ctx context.Context, event Event) error {
 
 func (sub *subscriber) initWrite(ctx context.Context) {
 	pinger := time.NewTicker(pingInterval)
-	var err error
 	defer pinger.Stop()
-	defer sub.closeNow(ctx, err)
 
 	for {
 		select {
 		case <-sub.doneChannel:
 			return
 		case event := <-sub.events:
-			err2 := sub.write(ctx, event)
-			if err2 != nil {
-				err = err2
+			err := sub.write(ctx, event)
+
+			if err != nil {
+				sub.closeNow(ctx, err)
 				return
 			}
 		case <-pinger.C:
 			slog.DebugContext(ctx, "pinging")
 			ctx, cancel := context.WithTimeout(ctx, pongWait)
 			defer cancel()
-			err2 := sub.Conn.Ping(ctx)
-			if err2 != nil {
-				err = err2
+
+			err := sub.Conn.Ping(ctx)
+
+			if err != nil {
+				sub.closeNow(ctx, err)
 				return
 			}
 		case <-ctx.Done():
-			err = ctx.Err()
+			sub.closeNow(ctx, nil)
 			return
 		}
 	}

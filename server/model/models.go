@@ -7,10 +7,12 @@ package model
 import (
 	"database/sql"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Session struct {
-	ID             string
+	ID             uuid.UUID
 	UserID         string
 	AccessToken    string
 	RefreshToken   sql.NullString
@@ -20,7 +22,7 @@ type Session struct {
 }
 
 type User struct {
-	ID        string
+	ID        uuid.UUID
 	Username  sql.NullString
 	Email     string
 	CreatedAt time.Time
