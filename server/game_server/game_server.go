@@ -207,7 +207,7 @@ func serialiseColour(colour board.Colour) string {
 }
 
 func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWriter, req *http.Request) error {
-	id, err := getId(writer, req)
+	gameId, err := getId(writer, req)
 	if err != nil {
 		return err
 	}
@@ -218,8 +218,12 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 		return err
 	}
 
+	slog.Info("subscribing user",
+		slog.String("email", authSession.UserEmail),
+		slog.String("gameid", gameId.String()))
+
 	server.sessionsLock.Lock()
-	session, found := server.sessions[id]
+	session, found := server.sessions[gameId]
 	server.sessionsLock.Unlock()
 
 	if !found {
@@ -230,7 +234,7 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	}
 
 	// todo accept header
-	Conn, err := websocket.Accept(writer, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
+	conn, err := websocket.Accept(writer, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
 		return err
 	}
@@ -240,7 +244,7 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 	// i.e. a player opens a new tab with the game or even on a separate device?
 	// just make any connection either one of the players
 	sub, colour := session.getSubscriber(ctx, authSession.UserID)
-	sub.init(Conn)
+	sub.init(conn)
 	session.subscriberLock.Unlock()
 
 	ctx = context.WithoutCancel(ctx)
@@ -310,8 +314,8 @@ func (session *Session) DeleteSubscriber(sub *subscriber) {
 
 	// TODO concurrent map writes probably because this is being called twice?
 	session.subscriberLock.Lock()
-	defer session.subscriberLock.Unlock()
 	session.viewers.Remove(sub)
+	session.subscriberLock.Unlock()
 }
 
 func (session *Session) end(winner board.Colour) {
@@ -429,6 +433,7 @@ func (sub *subscriber) closeSlow() {
 		err := sub.Conn.Close(websocket.StatusPolicyViolation, "connection too slow to keep up with messages")
 		if err != nil {
 			err = sub.Conn.CloseNow()
+			panic(err)
 		}
 	}
 	sub.session.DeleteSubscriber(sub)

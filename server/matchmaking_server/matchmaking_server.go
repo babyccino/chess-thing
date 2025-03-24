@@ -17,6 +17,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"golang.org/x/exp/slices"
 )
 
 type Format struct {
@@ -44,6 +45,15 @@ func (queue *Queue) pop() *Player {
 	player := queue.queue[0]
 	queue.queue = queue.queue[1:]
 	return player
+}
+
+func (queue *Queue) removePlayer(player *Player) error {
+	index := slices.Index(queue.queue, player)
+	if index == -1 {
+		return errors.New("player was not found in queue")
+	}
+	queue.queue = slices.Delete(queue.queue, index, index)
+	return nil
 }
 
 type QueueMap map[Format]*Queue
@@ -216,6 +226,9 @@ func (server *MatchmakingServer) UnrankedHandler(
 		panic("error marshalling json")
 	}
 
+	slog.Info("match found",
+		slog.String("queue player", player.id.String()),
+		slog.String("http player", userSession.UserID.String()))
 	err = player.write(ctx, bytes)
 	player.closeNow(ctx, err)
 
@@ -275,7 +288,7 @@ func (server *MatchmakingServer) Subscribe(
 		return err
 	}
 	// todo make session id and add to context
-	slog.InfoContext(ctx, "client subscribed to unranked queue")
+	slog.InfoContext(ctx, "client subscribed to queue", slog.Any("format", format))
 
 	// todo not sure why having this causes connection to be closed
 	// ctx = conn.CloseRead(ctx)
@@ -308,20 +321,19 @@ func (player *Player) closeNow(ctx context.Context, err error) {
 		player.doneChannel <- struct{}{}
 	}
 
-	slog.Info("closing")
+	slog.Info("closing player ws", slog.String("id", player.id.String()))
 	if err != nil {
 		logError(ctx, err)
 	}
-	player.Conn.CloseNow()
-	player.queue.MarkDelete(player.id)
-}
 
-func (player *Player) closeSlow() {
-	player.closed = true
-	if player.Conn != nil {
-		err := player.Conn.Close(websocket.StatusPolicyViolation, "too slow to keep up with messages")
+	player.Conn.CloseNow()
+	player.queue.lock.Lock()
+	err = player.queue.removePlayer(player)
+	if err != nil {
+		slog.Error("removing_player", slog.Any("error", err))
+		return
 	}
-	player.queue.MarkDelete(player.id)
+	player.queue.lock.Unlock()
 }
 
 const (
@@ -344,7 +356,7 @@ func (player *Player) initWrite(ctx context.Context) {
 			defer cancel()
 			err := player.Conn.Ping(ctx)
 			if err != nil {
-				player.closeNow(ctx, err)
+				player.closeNow(ctx, nil)
 				return
 			}
 		case <-ctx.Done():
