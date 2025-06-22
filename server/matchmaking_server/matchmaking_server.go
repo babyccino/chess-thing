@@ -128,6 +128,8 @@ type QueueResponse struct {
 }
 
 func (player *Player) write(ctx context.Context, bytes []byte) error {
+	println("write")
+	defer println("write done")
 	return writeTimeout(ctx, 3*time.Second,
 		player.Conn, bytes)
 }
@@ -173,9 +175,19 @@ func (server *MatchmakingServer) getQueue(format *Format) *Queue {
 	return queue
 }
 
+func found(gameId string) []byte {
+	bytes, err := json.Marshal(QueueResponse{true, gameId})
+	if err != nil {
+		panic(err)
+	}
+	return bytes
+}
+
 func (server *MatchmakingServer) UnrankedHandler(
 	writer http.ResponseWriter, req *http.Request,
 ) {
+	slog.Info("UnrankedHandler")
+
 	format, err := getFormat(req)
 	if err != nil {
 		writer.WriteHeader(http.StatusBadRequest)
@@ -215,23 +227,16 @@ func (server *MatchmakingServer) UnrankedHandler(
 		format.GameLength,
 	)
 
-	bytes, err := json.Marshal(QueueResponse{true, gameId.String()})
-	if err != nil {
-		player.write(ctx, []byte("{\"found\":false,\"error\":\"ERROR\"}"))
-		player.closeNow(ctx, nil)
-
-		writer.WriteHeader(http.StatusInternalServerError)
-		writer.Write([]byte("{\"found\":false}"))
-
-		panic("error marshalling json")
-	}
+	bytes := found(gameId.String())
 
 	slog.Info("match found",
 		slog.String("queue player", player.id.String()),
 		slog.String("http player", userSession.UserID.String()))
+
 	err = player.write(ctx, bytes)
 	player.closeNow(ctx, err)
 
+	println("returning")
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
 		writer.Write([]byte("{\"found\":false}"))
@@ -317,6 +322,8 @@ func writeTimeout(
 }
 
 func (player *Player) closeNow(ctx context.Context, err error) {
+	println("closeNow")
+	defer println("closeNow done")
 	if player.doneChannel != nil {
 		player.doneChannel <- struct{}{}
 	}

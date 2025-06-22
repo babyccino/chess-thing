@@ -7,10 +7,17 @@ export type ConnectEvent = {
   colour: "w" | "b"
   legalMoves?: string[]
 }
+export type ConnectOtherEvent = {
+  type: "connect"
+  colour: "w" | "b"
+}
 export type ConnectViewerEvent = {
   type: "connectViewer"
   fen: string
   moveHistory?: string[]
+}
+export type ConnectOtherViewerEvent = {
+  type: "connectViewer"
 }
 export type MoveEvent = {
   type: "move"
@@ -21,6 +28,13 @@ export type MoveEvent = {
 export type SendMoveEvent = {
   type: "sendMove"
   move: string
+}
+export type DuplicateSessionEvent = {
+  type: "connect"
+  fen: string
+  moveHistory?: string[]
+  colour: "w" | "b"
+  legalMoves?: string[]
 }
 export type WinEvent = {
   type: "end"

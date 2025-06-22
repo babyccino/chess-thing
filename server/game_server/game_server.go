@@ -42,28 +42,42 @@ type Session struct {
 	createdAt time.Time
 }
 
+type ConnectionState int8
+
+const (
+	Connected ConnectionState = iota
+	Disconnected
+	Closed
+)
+
 type subscriber struct {
-	userId      uuid.UUID
-	events      chan Event
-	doneChannel chan struct{}
-	Conn        *websocket.Conn
-	closed      bool
-	session     *Session
+	userId           uuid.UUID
+	events           chan Event
+	doneChannel      chan struct{}
+	reconnectChannel chan struct{}
+	Conn             *websocket.Conn
+	state            ConnectionState
+	session          *Session
+	colour           board.Colour
 }
 
 func NewSubscriber(
 	userId uuid.UUID,
 	session *Session,
+	colour board.Colour,
 ) *subscriber {
 	return &subscriber{
-		userId:      userId,
-		events:      make(chan Event, 10),
-		doneChannel: make(chan struct{}),
-		session:     session,
+		userId:           userId,
+		events:           make(chan Event, 10),
+		doneChannel:      make(chan struct{}),
+		reconnectChannel: make(chan struct{}),
+		session:          session,
+		colour:           colour,
 	}
 }
 func (subscriber *subscriber) init(Conn *websocket.Conn) {
 	subscriber.Conn = Conn
+	subscriber.state = Connected
 }
 
 func NewGameServer(authServer *auth.AuthServer) *GameServer {
@@ -85,15 +99,15 @@ func newSession(
 	increment time.Duration,
 	gameLength time.Duration,
 ) *Session {
-	board := board.NewBoard()
-	err := board.Init()
+	chessBoard := board.NewBoard()
+	err := chessBoard.Init()
 	if err != nil {
 		panic(err)
 	}
 
 	session := &Session{
 		id:    uuid.New(),
-		board: board,
+		board: chessBoard,
 
 		subscriberLock: sync.Mutex{},
 		players:        [2]*subscriber{},
@@ -105,8 +119,10 @@ func newSession(
 		createdAt: time.Now(),
 		updatedAt: time.Now(),
 	}
-	session.players[0] = NewSubscriber(white, session)
-	session.players[1] = NewSubscriber(black, session)
+
+	session.players[0] = NewSubscriber(white, session, board.White)
+	session.players[1] = NewSubscriber(black, session, board.Black)
+
 	return session
 }
 
@@ -168,6 +184,7 @@ type eventType = string
 
 const (
 	connect       eventType = "connect"
+	reconnect               = "reconnect"
 	connectViewer           = "connectViewer"
 	move                    = "move"
 	end                     = "end"
@@ -233,29 +250,36 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 		return errors.New("not found")
 	}
 
+	session.subscriberLock.Lock()
+	sub, colour := session.getSubscriber(ctx, authSession.UserID)
+
+	if colour >= board.White && sub.state == Connected {
+		writer.WriteHeader(http.StatusBadRequest)
+		writer.Write([]byte("already connected"))
+		return errors.New("already connected")
+	}
+
 	// todo accept header
 	conn, err := websocket.Accept(writer, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
 		return err
 	}
 
-	session.subscriberLock.Lock()
-	// BIG TODO: handle reconnections/connection a second time
-	// i.e. a player opens a new tab with the game or even on a separate device?
-	// just make any connection either one of the players
-	sub, colour := session.getSubscriber(ctx, authSession.UserID)
+	state := sub.state
 	sub.init(conn)
 	session.subscriberLock.Unlock()
 
 	ctx = context.WithoutCancel(ctx)
 
 	// todo send info about other player
-	event := session.CreateConnectEvent(colour)
-	err = sub.write(ctx, event)
+	subEvent, eventForOthers := session.CreateConnectEvent(colour, state)
+	err = sub.write(ctx, subEvent)
 	if err != nil {
 		sub.closeNow(ctx, err)
 		return err
 	}
+
+	session.publish(sub, eventForOthers)
 
 	if colour != board.None {
 		go sub.initRead(ctx)
@@ -266,7 +290,10 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 }
 
 // Doesn't lock
-func (session *Session) getSubscriber(ctx context.Context, userId uuid.UUID) (*subscriber, board.Colour) {
+func (session *Session) getSubscriber(
+	ctx context.Context,
+	userId uuid.UUID,
+) (*subscriber, board.Colour) {
 	// BIG TODO: handle reconnections/connection a second time
 	// i.e. a player opens a new tab with the game or even on a separate device?
 	// just make any connection either one of the players
@@ -284,23 +311,41 @@ func (session *Session) getSubscriber(ctx context.Context, userId uuid.UUID) (*s
 	return sub, board.None
 }
 
-func (session *Session) CreateConnectEvent(colour board.Colour) Event {
+func (session *Session) CreateConnectEvent(
+	colour board.Colour,
+	connectionState ConnectionState,
+) (subEvent Event, otherEvent Event) {
 	fen := session.board.Fen()
 	if colour == board.None {
-		return Event{
+		subEvent = Event{
 			Type:        connectViewer,
 			Fen:         fen,
 			MoveHistory: moveList(session.board.MoveHistory),
 		}
+		otherEvent = Event{
+			Type: connectViewer,
+		}
 	} else {
-		return Event{
-			Type:        connect,
+		var connectionType string
+		if connectionState == Disconnected {
+			connectionType = reconnect
+		} else {
+			connectionType = connect
+		}
+
+		subEvent = Event{
+			Type:        connectionType,
 			Fen:         fen,
 			MoveHistory: moveList(session.board.MoveHistory),
 			Colour:      serialiseColour(colour),
 			LegalMoves:  moveList(session.board.LegalMoves),
 		}
+		otherEvent = Event{
+			Type:   connectionType,
+			Colour: serialiseColour(colour),
+		}
 	}
+	return subEvent, otherEvent
 }
 
 func (session *Session) DeleteSubscriber(sub *subscriber) {
@@ -386,6 +431,13 @@ func (session *Session) handleMove(sub *subscriber, move board.Move) {
 	session.publish(sub, event)
 
 	win := session.board.HasWinner()
+	if win == board.NoWin {
+		return
+	}
+	handleWin(win, session)
+}
+
+func handleWin(win board.WinState, session *Session) {
 	switch win {
 	case board.BlackWin:
 		session.publish(nil, Event{Type: "end", Outcome: "win", Victor: "b"})
@@ -409,10 +461,14 @@ func writeTimeout(ctx context.Context, timeout time.Duration, wsConn *websocket.
 }
 
 func (sub *subscriber) closeNow(ctx context.Context, err error) {
+	if sub.state == Closed {
+		return
+	}
+	sub.state = Closed
+
 	if sub.doneChannel != nil {
 		sub.doneChannel <- struct{}{}
 	}
-	sub.closed = true
 
 	slog.Info("closing")
 	if err != nil {
@@ -426,7 +482,7 @@ func (sub *subscriber) closeSlow() {
 	if sub.doneChannel != nil {
 		sub.doneChannel <- struct{}{}
 	}
-	sub.closed = true
+	sub.state = Closed
 
 	slog.Info("closing")
 	if sub.Conn != nil {
@@ -469,6 +525,18 @@ func (sub *subscriber) initRead(ctx context.Context) {
 		}
 		if eventBuffer.Type != "sendMove" {
 			sub.closeNow(ctx, errors.New("event sent is not \"sendMove\""))
+			return
+		}
+
+		if sub.colour != board.White && sub.colour != board.Black {
+			sub.closeNow(ctx, errors.New("invalid colour"))
+			return
+		}
+
+		if sub.colour != sub.session.board.WhoseMove() {
+			sub.closeNow(ctx, errors.New("not player to move"))
+			colour := board.OppositeColour(sub.colour)
+			handleWin(board.ColourToWinState(colour), sub.session)
 			return
 		}
 
@@ -518,20 +586,45 @@ func (sub *subscriber) initWrite(ctx context.Context) {
 				return
 			}
 		case <-pinger.C:
-			slog.DebugContext(ctx, "pinging")
+			slog.InfoContext(ctx, "pinging")
 			ctx, cancel := context.WithTimeout(ctx, pongWait)
 			defer cancel()
 
 			err := sub.Conn.Ping(ctx)
 
 			if err != nil {
-				sub.closeNow(ctx, err)
+				slog.Info("ping failed",
+					slog.String("email", sub.userId.String()),
+					slog.String("gameid", sub.session.id.String()))
+				sub.Disconnected(ctx, err)
 				return
 			}
+
+			slog.Info("ping succeeded",
+				slog.String("email", sub.userId.String()),
+				slog.String("gameid", sub.session.id.String()))
 		case <-ctx.Done():
 			sub.closeNow(ctx, nil)
 			return
 		}
+	}
+}
+
+func (sub *subscriber) Disconnected(ctx context.Context, err error) {
+	sub.state = Disconnected
+
+	timer := time.NewTimer(sub.session.gameLength / 10)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		colour := board.OppositeColour(sub.colour)
+		handleWin(board.ColourToWinState(colour), sub.session)
+		sub.closeNow(ctx, err)
+	case <-ctx.Done():
+		sub.closeNow(ctx, ctx.Err())
+	case <-sub.reconnectChannel:
+		return
 	}
 }
 

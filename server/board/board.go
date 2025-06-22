@@ -167,6 +167,10 @@ const (
 	MoveRuleDraw
 )
 
+func ColourToWinState(colour Colour) WinState {
+	return WinState(colour)
+}
+
 func (board *BoardState) HasWinner() WinState {
 	if board.CaptureMoveCounter == 50 {
 		return MoveRuleDraw

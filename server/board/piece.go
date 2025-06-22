@@ -13,7 +13,7 @@ func ColourString(colour Colour) string {
 	}
 }
 
-func oppositeColour(colour Colour) Colour {
+func OppositeColour(colour Colour) Colour {
 	if colour == White {
 		return Black
 	}

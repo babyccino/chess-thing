@@ -107,18 +107,18 @@ func run() error {
 	mux := http.NewServeMux()
 
 	/**
-	in dev this will be the main server and astro will be used for convenience
-	in prod we're gonna statically generate html, serve that with nginx,
-			and reverse proxy api requests to the go server
+		in dev this will be the main server and astro will be used for convenience
+		in prod we're gonna statically generate html, serve that with nginx,
+				and reverse proxy api requests to the go server
 
-	prod: req -> nginx ->(api) go server
-	                   ->(page) static html
+		prod: req -> nginx ->(api) go server
+		                   ->(page) static html
 
-	dev: req -> go server ->(api) go server
-	                      ->(page) astro server
+		dev: req -> go server ->(api) go server
+		                      ->(page) astro server
 
-	dno why I did this this way tbh I could have just used the astro server as the proxy
-	to the api server
+		dno why I did this this way tbh I could have just used the astro server as the proxy
+		to the api server
 	**/
 
 	prefix := ""

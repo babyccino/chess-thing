@@ -29,6 +29,7 @@
     }
     return null
   }
+
   function getId(): string {
     const routeId = getIdFromRoute()
     if (routeId !== null) return routeId
@@ -97,20 +98,23 @@
     console.log("clicked", to)
     if (selected === null) {
       selected = to
-    } else {
-      const from = selected
-      selected = null
-      if (board.legalMoves.findIndex(move => move.from === from && move.to === to) === -1) {
-        console.log(board.legalMoves)
-        console.log(from, to)
-        console.warn("not legal move")
-        return
-      }
-      movePiece({ from, to: to })
-      const hi = sendMove(from, to)
-      console.log("sending", hi)
-      ws?.send(JSON.stringify(hi))
+      return
     }
+
+    const from = selected
+    selected = null
+
+    if (board.legalMoves.findIndex(move => move.from === from && move.to === to) === -1) {
+      console.log(board.legalMoves)
+      console.log(from, to)
+      console.warn("not legal move")
+      return
+    }
+
+    movePiece({ from, to: to })
+    const hi = sendMove(from, to)
+    console.log("sending", hi)
+    ws?.send(JSON.stringify(hi))
   }
 
   function isBlack(index: number): boolean {
