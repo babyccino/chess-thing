@@ -171,6 +171,21 @@ func ColourToWinState(colour Colour) WinState {
 	return WinState(colour)
 }
 
+func WinStateToString(winState WinState) string {
+	switch winState {
+	case WhiteWin:
+		return "White wins"
+	case BlackWin:
+		return "Black wins"
+	case Stalemate:
+		return "Stalemate"
+	case MoveRuleDraw:
+		return "Move rule draw"
+	default:
+		return "No win"
+	}
+}
+
 func (board *BoardState) HasWinner() WinState {
 	if board.CaptureMoveCounter == 50 {
 		return MoveRuleDraw

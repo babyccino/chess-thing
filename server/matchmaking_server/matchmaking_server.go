@@ -212,6 +212,9 @@ func (server *MatchmakingServer) UnrankedHandler(
 			return
 		}
 
+		slog.Info("no match found",
+			slog.String("http player", userSession.UserID.String()))
+
 		writer.Header().Add("Content-Type", "application/json")
 		writer.Write(bytes)
 		return
