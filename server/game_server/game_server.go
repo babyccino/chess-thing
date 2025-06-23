@@ -263,19 +263,23 @@ func (server *GameServer) Subscribe(ctx context.Context, writer http.ResponseWri
 		return errors.New("already connected")
 	}
 
+	state := sub.state
+	if state == Disconnected {
+		sub.reconnectChannel <- struct{}{}
+	}
+
 	// todo accept header
 	conn, err := websocket.Accept(writer, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
 		return err
 	}
 
-	state := sub.state
 	sub.init(conn)
 
 	ctx = context.WithoutCancel(ctx)
 
-	// todo send info about other player
 	subEvent, eventForOthers := session.CreateConnectEvent(colour, state)
+
 	err = sub.write(ctx, subEvent)
 	if err != nil {
 		sub.closeNow(ctx, err)
@@ -297,9 +301,6 @@ func (session *Session) getSubscriber(
 	ctx context.Context,
 	userId uuid.UUID,
 ) (*subscriber, board.Colour) {
-	// BIG TODO: handle reconnections/connection a second time
-	// i.e. a player opens a new tab with the game or even on a separate device?
-	// just make any connection either one of the players
 	if userId == session.players[0].userId {
 		slog.InfoContext(ctx, "added client to session as white player", slog.String("id", userId.String()))
 		return session.players[0], board.White
@@ -652,6 +653,11 @@ func (sub *subscriber) Disconnected(ctx context.Context, err error) {
 
 	select {
 	case <-timer.C:
+		slog.Info("game ended due to timeout",
+			slog.String("userId", sub.userId.String()),
+			slog.String("gameId", sub.session.id.String()),
+		)
+
 		colour := board.OppositeColour(sub.colour)
 		sub.session.handleWin(board.ColourToWinState(colour))
 
