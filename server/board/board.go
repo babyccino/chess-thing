@@ -97,6 +97,7 @@ type BoardState struct {
 	MoveHistory        []Move
 	MoveCounter        uint16
 	LegalMoves         []Move
+	WinState           WinState
 }
 
 func NewBoard() *BoardState {
@@ -187,6 +188,15 @@ func WinStateToString(winState WinState) string {
 }
 
 func (board *BoardState) HasWinner() WinState {
+	if board.WinState != NoWin {
+		return board.WinState
+	}
+
+	winState := board.HasWinnerImpl()
+	board.WinState = winState
+	return winState
+}
+func (board *BoardState) HasWinnerImpl() WinState {
 	if board.CaptureMoveCounter == 50 {
 		return MoveRuleDraw
 	}

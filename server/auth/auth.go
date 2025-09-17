@@ -20,6 +20,56 @@ import (
 
 type StateStoreMap map[string]time.Time
 
+type AuthStrategy interface {
+	IsAuthenticated(
+		ctx context.Context,
+		writer http.ResponseWriter,
+		req *http.Request,
+	) (bool, error)
+	GetUserSession(
+		ctx context.Context,
+		writer http.ResponseWriter,
+		req *http.Request,
+	) (*model.GetSessionByIdAndUserRow, error)
+}
+
+type MockAuthServer struct {
+	db *model.Queries
+}
+
+func (server *MockAuthServer) IsAuthenticated(
+	ctx context.Context,
+	writer http.ResponseWriter,
+	req *http.Request,
+) (bool, error) {
+	return true, nil
+}
+
+func (server *MockAuthServer) GetUserSession(
+	ctx context.Context,
+	writer http.ResponseWriter,
+	req *http.Request,
+) (*model.GetSessionByIdAndUserRow, error) {
+	_, err := getSessionId(writer, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.GetSessionByIdAndUserRow{
+		UserID:                uuid.New(),
+		UserUsername:          nullString("user"),
+		UserEmail:             "user@gmail.com",
+		UserCreatedAt:         time.Now(),
+		UserUpdatedAt:         time.Now(),
+		SessionID:             uuid.New(),
+		SessionAccessToken:    "access_token",
+		SessionRefreshToken:   nullString("refresh_token"),
+		SessionExpiresAt:      time.Now().Add(time.Hour),
+		SessionCreatedAt:      time.Now(),
+		SessionLastAccessedAt: time.Now(),
+	}, nil
+}
+
 type AuthServer struct {
 	ServeMux     *http.ServeMux
 	oAuth2Config *oauth2.Config
@@ -456,19 +506,19 @@ func (server *AuthServer) GetUserSession(
 	ctx context.Context,
 	writer http.ResponseWriter,
 	req *http.Request,
-) (model.GetSessionByIdAndUserRow, error) {
+) (*model.GetSessionByIdAndUserRow, error) {
 	sessionId, err := getSessionId(writer, req)
 	if err != nil {
-		return model.GetSessionByIdAndUserRow{}, err
+		return nil, err
 	}
 
 	sessionAndUser, err := server.db.GetSessionByIdAndUser(ctx, sessionId)
 	if err != nil {
 		http.Error(writer, "Failed querying db", http.StatusInternalServerError)
-		return model.GetSessionByIdAndUserRow{}, err
+		return nil, err
 	}
 
-	return sessionAndUser, err
+	return &sessionAndUser, err
 }
 
 func (server *AuthServer) IsAuthenticated(
