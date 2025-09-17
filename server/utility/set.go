@@ -28,7 +28,7 @@ func (set Set[T]) Remove(key T) {
 
 func (set Set[T]) DiffArr(other *Set[T]) []T {
 	ret := make([]T, 0)
-	for el := range set.Iter() {
+	for el := range set.Keys() {
 		if !other.Has(el) {
 			ret = append(ret, el)
 		}
@@ -36,7 +36,7 @@ func (set Set[T]) DiffArr(other *Set[T]) []T {
 	return ret
 }
 
-func (set Set[T]) Iter() iter.Seq[T] {
+func (set Set[T]) Keys() iter.Seq[T] {
 	return maps.Keys(set)
 }
 

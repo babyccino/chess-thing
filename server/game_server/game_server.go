@@ -294,7 +294,7 @@ func (server *GameServer) SubscribeHandler(
 		return
 	}
 
-	session.publish(sub, eventForOthers)
+	session.publish(ctx, sub, eventForOthers)
 
 	if colour != board.None {
 		go sub.initRead(ctx)
@@ -370,12 +370,12 @@ func (session *Session) CreateConnectEvent(
 	return subEvent, otherEvent
 }
 
-func (session *Session) DeleteSubscriber(sub *subscriber) {
+func (session *Session) DeleteSubscriber(ctx context.Context, sub *subscriber) {
 	if session.players[0] == sub {
-		session.handleWin(board.BlackWin)
+		session.handleWin(ctx, board.BlackWin)
 		return
 	} else if sub.session.players[1] == sub {
-		session.handleWin(board.WhiteWin)
+		session.handleWin(ctx, board.WhiteWin)
 		return
 	}
 
@@ -385,7 +385,7 @@ func (session *Session) DeleteSubscriber(sub *subscriber) {
 	session.subscriberLock.Unlock()
 }
 
-func (session *Session) publishImpl(event Event, sub *subscriber) {
+func (session *Session) publishImpl(ctx context.Context, event Event, sub *subscriber) {
 	if sub == nil || sub.events == nil {
 		return
 	}
@@ -393,43 +393,47 @@ func (session *Session) publishImpl(event Event, sub *subscriber) {
 	select {
 	case sub.events <- event:
 	default:
-		sub.closeSlow()
+		sub.closeSlow(ctx)
 	}
 }
 
-func (session *Session) publish(sub *subscriber, event Event) {
+func (session *Session) publish(ctx context.Context, sub *subscriber, event Event) {
 	count := 0
 	for _, player := range session.players {
 		if player == sub {
 			continue
 		}
 		count += 1
-		session.publishImpl(event, player)
+		session.publishImpl(ctx, event, player)
 	}
-	for viewer := range session.viewers.Iter() {
+	for viewer := range session.viewers.Keys() {
 		if viewer == sub {
 			continue
 		}
 		count += 1
-		session.publishImpl(event, viewer)
+		session.publishImpl(ctx, event, viewer)
 	}
 
 	slog.Info("subscribers were sent an event",
 		slog.Int("count", count), slog.Any("event", event))
 }
 
-func (session *Session) handleError(err error) {
+func (session *Session) handleError(ctx context.Context, err error) {
 	text := err.Error()
-	session.publish(nil, Event{Type: errorEvent, Text: &text})
+	session.publish(ctx, nil, Event{Type: errorEvent, Text: &text})
 	for _, player := range session.players {
 		player.closeNow(nil, err)
 	}
-	for viewer := range session.viewers.Iter() {
+	for viewer := range session.viewers.Keys() {
 		viewer.closeNow(nil, err)
 	}
 }
 
-func (session *Session) handleMove(sub *subscriber, move board.Move) error {
+func (session *Session) handleMove(
+	ctx context.Context,
+	sub *subscriber,
+	move board.Move,
+) error {
 	session.boardStateLock.Lock()
 	defer session.boardStateLock.Unlock()
 
@@ -450,9 +454,9 @@ func (session *Session) handleMove(sub *subscriber, move board.Move) error {
 		// shouldn't really happen but w/evs
 		whiteTime, blackTime = session.getClockStateImpl()
 		if moving == board.White && whiteTime <= 0 {
-			session.handleTimeLossImpl(board.White)
+			session.handleTimeLossImpl(ctx, board.White)
 		} else if moving == board.Black && blackTime <= 0 {
-			session.handleTimeLossImpl(board.Black)
+			session.handleTimeLossImpl(ctx, board.Black)
 		}
 	} else {
 
@@ -460,7 +464,7 @@ func (session *Session) handleMove(sub *subscriber, move board.Move) error {
 
 	err := session.boardState.MakeMove(move)
 	if err != nil {
-		session.handleError(err)
+		session.handleError(ctx, err)
 		return err
 	}
 
@@ -471,27 +475,33 @@ func (session *Session) handleMove(sub *subscriber, move board.Move) error {
 	blackTimeMs := int32(blackTime.Milliseconds())
 	event := moveEvent(&moveStr, &fen, &serialisedLegalMoves,
 		&whiteTimeMs, &blackTimeMs)
-	session.publish(sub, event)
+	session.publish(ctx, sub, event)
 
 	if session.boardState.WinState > board.NoWin {
 		err = errors.New("move sent after game end")
-		session.handleError(err)
+		session.handleError(ctx, err)
 		return err
 	}
 
 	win := session.boardState.HasWinner()
 	if win > board.NoWin {
-		session.handleWinImpl(win)
+		session.handleWinImpl(ctx, win)
 		return nil
 	}
 
 	if startClock {
-		session.startClockImpl(board.OppositeColour(moving))
+		session.startClockImpl(ctx, board.OppositeColour(moving))
 	}
 	return nil
 }
 
-func moveEvent(moveStr, fen *string, serialisedLegalMoves *[]string, whiteTimeMs, blackTimeMs *int32) Event {
+func moveEvent(
+	moveStr,
+	fen *string,
+	serialisedLegalMoves *[]string,
+	whiteTimeMs,
+	blackTimeMs *int32,
+) Event {
 	return Event{
 		Type:       "move",
 		Move:       moveStr,
@@ -502,12 +512,12 @@ func moveEvent(moveStr, fen *string, serialisedLegalMoves *[]string, whiteTimeMs
 	}
 }
 
-func (session *Session) handleWin(win board.WinState) {
+func (session *Session) handleWin(ctx context.Context, win board.WinState) {
 	session.boardStateLock.Lock()
-	session.handleWinImpl(win)
+	session.handleWinImpl(ctx, win)
 	session.boardStateLock.Unlock()
 }
-func (session *Session) handleWinImpl(win board.WinState) {
+func (session *Session) handleWinImpl(ctx context.Context, win board.WinState) {
 	slog.Info("win",
 		slog.String("condition", board.WinStateToString(win)),
 		slog.String("sessionId", session.id.String()))
@@ -533,11 +543,11 @@ func (session *Session) handleWinImpl(win board.WinState) {
 		fallthrough
 	default:
 	}
-	session.publish(nil, Event{Type: "end", Outcome: &outcome, Victor: &victor})
+	session.publish(ctx, nil, Event{Type: "end", Outcome: &outcome, Victor: &victor})
 
 	go func() {
 		time.Sleep(5 * time.Second)
-		session.cleanup()
+		session.cleanup(ctx)
 	}()
 }
 
@@ -563,10 +573,10 @@ func (sub *subscriber) closeNow(ctx context.Context, err error) {
 		logError(ctx, err)
 	}
 	sub.Conn.CloseNow()
-	sub.session.DeleteSubscriber(sub)
+	sub.session.DeleteSubscriber(ctx, sub)
 }
 
-func (sub *subscriber) closeSlow() {
+func (sub *subscriber) closeSlow(ctx context.Context) {
 	if sub.doneChannel != nil {
 		sub.doneChannel <- struct{}{}
 	}
@@ -580,69 +590,72 @@ func (sub *subscriber) closeSlow() {
 			panic(err)
 		}
 	}
-	sub.session.DeleteSubscriber(sub)
+	sub.session.DeleteSubscriber(ctx, sub)
 }
 
 var buffer = [1000]byte{}
 
 func (sub *subscriber) initRead(ctx context.Context) {
 	for {
-		msgType, reader, err := sub.Conn.Reader(ctx)
-		if err != nil {
-			closeStatus := websocket.CloseStatus(err)
-			slog.InfoContext(ctx, "close", slog.String("code", closeStatus.String()))
-
-			if closeStatus == websocket.StatusGoingAway {
-				sub.Disconnected(ctx, err)
-				return
-			}
-
-			sub.closeNow(ctx, err)
-			return
-		}
-
-		if msgType != websocket.MessageText {
-			return
-		}
-
-		n, err := reader.Read(buffer[:])
-		if err != nil {
-			sub.closeNow(ctx, err)
-			return
-		}
-
-		eventBuffer := Event{}
-		err = json.Unmarshal(buffer[:n], &eventBuffer)
-		if err != nil {
-			sub.closeNow(ctx, err)
-			return
-		}
-		if eventBuffer.Type != "sendMove" {
-			sub.closeNow(ctx, errors.New("event sent is not \"sendMove\""))
-			return
-		}
-
-		if sub.colour != board.White && sub.colour != board.Black {
-			sub.closeNow(ctx, errors.New("invalid colour"))
-			return
-		}
-
-		if sub.colour != sub.session.boardState.WhoseMove() {
-			sub.closeNow(ctx, errors.New("not player to move"))
-			colour := board.OppositeColour(sub.colour)
-			sub.session.handleWin(board.ColourToWinState(colour))
-			return
-		}
-
-		move, err := board.DeserialiseMove(*eventBuffer.Move)
-		if err != nil {
-			sub.closeNow(ctx, err)
-			return
-		}
-		fmt.Printf("%+v\n", move)
-
-		_ = sub.session.handleMove(sub, move)
+		sub.initReadImpl(ctx)
 	}
+}
+func (sub *subscriber) initReadImpl(ctx context.Context) {
+	msgType, reader, err := sub.Conn.Reader(ctx)
+	if err != nil {
+		closeStatus := websocket.CloseStatus(err)
+		slog.InfoContext(ctx, "close", slog.String("code", closeStatus.String()))
+
+		if closeStatus == websocket.StatusGoingAway {
+			sub.Disconnected(ctx, err)
+			return
+		}
+
+		sub.closeNow(ctx, err)
+		return
+	}
+
+	if msgType != websocket.MessageText {
+		return
+	}
+
+	n, err := reader.Read(buffer[:])
+	if err != nil {
+		sub.closeNow(ctx, err)
+		return
+	}
+
+	eventBuffer := Event{}
+	err = json.Unmarshal(buffer[:n], &eventBuffer)
+	if err != nil {
+		sub.closeNow(ctx, err)
+		return
+	}
+	if eventBuffer.Type != "sendMove" {
+		sub.closeNow(ctx, errors.New("event sent is not \"sendMove\""))
+		return
+	}
+
+	if sub.colour != board.White && sub.colour != board.Black {
+		sub.closeNow(ctx, errors.New("invalid colour"))
+		return
+	}
+
+	if sub.colour != sub.session.boardState.WhoseMove() {
+		sub.closeNow(ctx, errors.New("not player to move"))
+		colour := board.OppositeColour(sub.colour)
+		sub.session.handleWin(ctx, board.ColourToWinState(colour))
+		return
+	}
+
+	move, err := board.DeserialiseMove(*eventBuffer.Move)
+	if err != nil {
+		sub.closeNow(ctx, err)
+		return
+	}
+	fmt.Printf("%+v\n", move)
+
+	_ = sub.session.handleMove(ctx, sub, move)
 }
 
 const (
@@ -711,7 +724,7 @@ func (sub *subscriber) Disconnected(ctx context.Context, err error) {
 	sub.state = Disconnected
 
 	colour := serialiseColour(sub.colour)
-	sub.session.publish(nil, Event{
+	sub.session.publish(ctx, nil, Event{
 		Type:   disconnect,
 		Colour: &colour,
 	})
@@ -734,7 +747,7 @@ func (sub *subscriber) Disconnected(ctx context.Context, err error) {
 		)
 
 		colour := board.OppositeColour(sub.colour)
-		sub.session.handleWin(board.ColourToWinState(colour))
+		sub.session.handleWin(ctx, board.ColourToWinState(colour))
 
 		sub.closeNow(ctx, err)
 	case <-ctx.Done():
@@ -766,12 +779,18 @@ func dumpMap(space string, m map[string]interface{}) {
 	}
 }
 
-func (session *Session) startClock(colour board.Colour) {
+func (session *Session) startClock(
+	ctx context.Context,
+	colour board.Colour,
+) {
 	session.clockLock.Lock()
-	session.startClockImpl(colour)
+	session.startClockImpl(ctx, colour)
 	session.clockLock.Unlock()
 }
-func (session *Session) startClockImpl(colour board.Colour) {
+func (session *Session) startClockImpl(
+	ctx context.Context,
+	colour board.Colour,
+) {
 	if session.clockTimer != nil {
 		session.clockTimer.Stop()
 	}
@@ -784,11 +803,11 @@ func (session *Session) startClockImpl(colour board.Colour) {
 	}
 
 	session.clockTimer = time.AfterFunc(remainingTime, func() {
-		session.handleTimeLoss(colour)
+		session.handleTimeLoss(ctx, colour)
 	})
 }
 
-func (session *Session) startAbortClockImpl(colour board.Colour) {
+func (session *Session) startAbortClockImpl(ctx context.Context, colour board.Colour) {
 	if session.clockTimer != nil {
 		session.clockTimer.Stop()
 	}
@@ -796,7 +815,7 @@ func (session *Session) startAbortClockImpl(colour board.Colour) {
 	abortTimer := session.whiteTime / 10
 
 	session.clockTimer = time.AfterFunc(abortTimer, func() {
-		session.handleAbort(colour)
+		session.handleAbort(ctx, colour)
 	})
 }
 
@@ -836,12 +855,12 @@ func (session *Session) updateClockImpl() {
 	session.updatedAt = now
 }
 
-func (session *Session) handleTimeLoss(losingColour board.Colour) {
+func (session *Session) handleTimeLoss(ctx context.Context, losingColour board.Colour) {
 	session.clockLock.Lock()
-	session.handleTimeLossImpl(losingColour)
+	session.handleTimeLossImpl(ctx, losingColour)
 	session.clockLock.Unlock()
 }
-func (session *Session) handleTimeLossImpl(losingColour board.Colour) {
+func (session *Session) handleTimeLossImpl(ctx context.Context, losingColour board.Colour) {
 	winningColour := board.OppositeColour(losingColour)
 	winState := board.ColourToWinState(winningColour)
 
@@ -856,28 +875,30 @@ func (session *Session) handleTimeLossImpl(losingColour board.Colour) {
 		victor = "w"
 	}
 
-	session.publish(nil, Event{Type: "end", Outcome: &outcome, Victor: &victor})
+	session.publish(ctx,
+		nil, Event{Type: "end", Outcome: &outcome, Victor: &victor})
 
 	go func() {
 		time.Sleep(5 * time.Second)
-		session.cleanup()
-		session.server.RemoveSession(session.id)
+		session.cleanup(ctx)
+		session.server.RemoveSession(ctx, session.id)
 	}()
 }
 
-func (session *Session) handleAbort(colour board.Colour) {
+func (session *Session) handleAbort(ctx context.Context, colour board.Colour) {
 	session.clockLock.Lock()
-	session.handleTimeLossImpl(colour)
+	session.handleAbortImpl(ctx, colour)
 	session.clockLock.Unlock()
 }
-func (session *Session) handleAbortImpl(colour board.Colour) {
+func (session *Session) handleAbortImpl(ctx context.Context, colour board.Colour) {
 	colourStr := serialiseColour(colour)
-	session.publish(nil, Event{Type: abort, Colour: &colourStr})
+	session.publish(ctx,
+		nil, Event{Type: abort, Colour: &colourStr})
 
 	go func() {
 		time.Sleep(5 * time.Second)
-		session.cleanup()
-		session.server.RemoveSession(session.id)
+		session.cleanup(ctx)
+		session.server.RemoveSession(ctx, session.id)
 	}()
 }
 
@@ -908,8 +929,8 @@ func (session *Session) getClockStateImpl() (whiteTime, blackTime time.Duration)
 	return whiteTime, blackTime
 }
 
-func (session *Session) cleanup() {
-	session.server.RemoveSession(session.id)
+func (session *Session) cleanup(ctx context.Context) {
+	session.server.RemoveSession(ctx, session.id)
 
 	session.clockLock.Lock()
 	defer session.clockLock.Unlock()
@@ -918,14 +939,24 @@ func (session *Session) cleanup() {
 		session.clockTimer.Stop()
 		session.clockTimer = nil
 	}
+
+	for _, player := range session.players {
+		player.closeNow(ctx, nil)
+	}
+	for viewer := range session.viewers.Keys() {
+		viewer.closeNow(ctx, nil)
+	}
+
+	slog.Info("session cleaned up",
+		slog.String("sessionId", session.id.String()))
 }
 
-func (server *GameServer) RemoveSession(sessionId uuid.UUID) {
+func (server *GameServer) RemoveSession(ctx context.Context, sessionId uuid.UUID) {
 	server.sessionsLock.Lock()
 	defer server.sessionsLock.Unlock()
 
 	if session, exists := server.sessions[sessionId]; exists {
-		session.cleanup()
+		session.cleanup(ctx)
 		delete(server.sessions, sessionId)
 	}
 }
